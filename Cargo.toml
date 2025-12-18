@@ -1,0 +1,59 @@
+[package]
+name = "gittop"
+version = "0.1.0"
+edition = "2021"
+description = "A beautiful native GitHub notification manager - no browser engine required"
+authors = ["Amar"]
+license = "MIT"
+
+[dependencies]
+# Iced GUI framework - using software renderer (tiny-skia) for minimal memory footprint
+iced = { version = "0.14.0-dev", default-features = false, features = [
+    "tiny-skia",
+    "tokio",
+    "image",
+    "svg",
+    "advanced",
+] }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# HTTP client for GitHub API
+reqwest = { version = "0.12", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/time handling
+chrono = { version = "0.4", default-features = false, features = [
+    "serde",
+    "clock",
+    "std",
+] }
+
+# Error handling
+thiserror = "2"
+
+# Secure credential storage
+keyring = { version = "3", features = [
+    "sync-secret-service",
+    "windows-native",
+    "apple-native",
+] }
+
+# Open URLs in browser
+open = "5"
+
+# Image loading for avatars
+image = "0.25"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
