@@ -5,5 +5,6 @@ pub mod icons;
 mod screens;
 mod theme;
 mod widgets;
+pub mod window_state;
 
 pub use app::App;

@@ -1,6 +1,5 @@
 //! Main application state and logic.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use iced::window::Id as WindowId;
@@ -14,12 +13,7 @@ use crate::ui::screens::{
     notifications::{NotificationMessage, NotificationsScreen},
     settings::{SettingsMessage, SettingsScreen},
 };
-
-/// Global storage for the main window ID
-static MAIN_WINDOW_ID: OnceLock<WindowId> = OnceLock::new();
-
-/// Track if window is currently hidden (minimized to tray)
-static IS_WINDOW_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+use crate::ui::window_state;
 
 /// Application state - which screen we're on.
 pub enum App {
@@ -160,9 +154,9 @@ impl App {
                     match cmd {
                         TrayCommand::ShowWindow => {
                             // Show and focus the window using stored ID
-                            let was_hidden = IS_WINDOW_HIDDEN.swap(false, std::sync::atomic::Ordering::Relaxed);
+                            let was_hidden = window_state::restore_from_hidden();
                             
-                            let window_task = if let Some(&id) = MAIN_WINDOW_ID.get() {
+                            let window_task = if let Some(id) = window_state::get_window_id() {
                                 Task::batch([
                                     window::set_mode(id, window::Mode::Windowed),
                                     window::gain_focus(id),
@@ -195,7 +189,7 @@ impl App {
 
             Message::WindowEvent(id, event) => {
                 // Store the main window ID on first event
-                let _ = MAIN_WINDOW_ID.set(id);
+                window_state::set_window_id(id);
                 
                 if let window::Event::CloseRequested = event {
                     // Check if minimize to tray is enabled
@@ -207,7 +201,25 @@ impl App {
 
                     if minimize_to_tray {
                         // Hide the window to tray instead of quitting
-                        IS_WINDOW_HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                        window_state::set_hidden(true);
+                        
+                        // Clear notification data to free memory
+                        if let App::Notifications(screen, _) = self {
+                            screen.all_notifications.clear();
+                            screen.all_notifications.shrink_to_fit();
+                            screen.filtered_notifications.clear();
+                            screen.filtered_notifications.shrink_to_fit();
+                            screen.groups.clear();
+                            screen.groups.shrink_to_fit();
+                            screen.type_counts.clear();
+                            screen.type_counts.shrink_to_fit();
+                            screen.repo_counts.clear();
+                            screen.repo_counts.shrink_to_fit();
+                        }
+                        
+                        // Aggressively trim memory
+                        crate::platform::trim_memory();
+                        
                         window::set_mode(id, window::Mode::Hidden)
                     } else {
                         // Exit the application
@@ -267,7 +279,7 @@ impl App {
 
     /// Subscriptions - periodic refresh, tray events, and window events.
     pub fn subscription(&self) -> Subscription<Message> {
-        let is_hidden = IS_WINDOW_HIDDEN.load(std::sync::atomic::Ordering::Relaxed);
+        let is_hidden = window_state::is_hidden();
         
         // Poll tray events - slower when hidden to save CPU
         let tray_poll_interval = if is_hidden { 500 } else { 100 };
