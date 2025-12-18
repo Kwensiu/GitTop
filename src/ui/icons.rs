@@ -47,14 +47,6 @@ fn icon_to_svg_bytes(data: &IconData) -> Vec<u8> {
     svg_str.into_bytes()
 }
 
-/// Create an SVG icon from IconData with the specified size.
-pub fn icon(data: &IconData, size: f32) -> Svg<'static> {
-    let bytes = icon_to_svg_bytes(data);
-    svg(svg::Handle::from_memory(bytes))
-        .width(size)
-        .height(size)
-}
-
 /// Create a colored SVG icon.
 pub fn icon_colored(data: &IconData, size: f32, color: Color) -> Svg<'static> {
     let bytes = icon_to_svg_bytes(data);

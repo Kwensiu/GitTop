@@ -1379,7 +1379,6 @@ dependencies = [
  "iced",
  "icondata_core",
  "icondata_lu",
- "image",
  "keyring",
  "mac-notification-sys",
  "notify-rust",

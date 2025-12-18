@@ -71,20 +71,6 @@ impl SubjectType {
             Self::Unknown => "Notification",
         }
     }
-
-    /// Returns a symbol/icon for the subject type.
-    pub fn icon(&self) -> &'static str {
-        match self {
-            Self::Issue => "●",                        // Circle for issues
-            Self::PullRequest => "⇄",                  // Arrows for PRs
-            Self::Release => "◆",                      // Diamond for releases
-            Self::Discussion => "💬",                  // Speech bubble
-            Self::CheckSuite => "✓",                   // Checkmark for CI
-            Self::Commit => "◉",                       // Dot circle for commits
-            Self::RepositoryVulnerabilityAlert => "⚠", // Warning
-            Self::Unknown => "○",                      // Empty circle
-        }
-    }
 }
 
 /// Why the user received this notification.
@@ -167,37 +153,12 @@ pub struct Owner {
     pub avatar_url: String,
 }
 
-/// A comment from an issue or pull request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Comment {
-    pub id: u64,
-    pub body: String,
-    pub user: CommentUser,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Minimal user info for comments.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommentUser {
-    pub login: String,
-}
-
-/// Thread subscription status from the notifications API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThreadSubscription {
-    pub subscribed: bool,
-    pub ignored: bool,
-    pub reason: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub url: String,
-    pub thread_url: String,
-}
-
 /// Frontend-friendly notification format for the UI.
 #[derive(Debug, Clone)]
 pub struct NotificationView {
     pub id: String,
     pub title: String,
+    #[allow(dead_code)] // Reserved for enhanced UI (repo badge)
     pub repo_name: String,
     pub repo_full_name: String,
     pub subject_type: SubjectType,
@@ -206,8 +167,11 @@ pub struct NotificationView {
     pub updated_at: DateTime<Utc>,
     pub time_ago: String,
     pub url: Option<String>,
+    #[allow(dead_code)] // Reserved for comment preview feature
     pub latest_comment_url: Option<String>,
+    #[allow(dead_code)] // Reserved for avatar display
     pub avatar_url: String,
+    #[allow(dead_code)] // Reserved for private repo indicator
     pub is_private: bool,
 }
 

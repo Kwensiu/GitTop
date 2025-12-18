@@ -97,6 +97,7 @@ impl AppSettings {
     }
 
     /// Get the active account username.
+    #[allow(dead_code)] // Reserved for multi-account feature
     pub fn active_account(&self) -> Option<&str> {
         self.accounts
             .iter()

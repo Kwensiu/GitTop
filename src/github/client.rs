@@ -4,7 +4,7 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT}
 use serde::Deserialize;
 use thiserror::Error;
 
-use super::types::{Comment, Notification, NotificationView, UserInfo};
+use super::types::{Notification, NotificationView, UserInfo};
 
 /// GitHub API base URL.
 const GITHUB_API_URL: &str = "https://api.github.com";
@@ -211,87 +211,6 @@ impl GitHubClient {
 
         if status.is_success() || status.as_u16() == 204 {
             Ok(())
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
-    }
-
-    /// Fetches a comment by its API URL.
-    /// Returns the comment body and author, or None if the request fails.
-    pub async fn get_comment(&self, url: &str) -> Option<Comment> {
-        let response = self.client.get(url).send().await.ok()?;
-        if response.status().is_success() {
-            response.json().await.ok()
-        } else {
-            None
-        }
-    }
-
-    /// Gets the subscription status for a thread.
-    pub async fn get_thread_subscription(
-        &self,
-        thread_id: &str,
-    ) -> Result<super::types::ThreadSubscription, GitHubError> {
-        let url = format!(
-            "{}/notifications/threads/{}/subscription",
-            GITHUB_API_URL, thread_id
-        );
-
-        let response = self.client.get(&url).send().await?;
-        let status = response.status();
-
-        if status.is_success() {
-            Ok(response.json().await?)
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else if status.as_u16() == 404 {
-            Err(GitHubError::Api {
-                status: 404,
-                message: "Not subscribed to this thread".to_string(),
-            })
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
-    }
-
-    /// Sets the subscription status for a thread (subscribe or ignore).
-    pub async fn set_thread_subscription(
-        &self,
-        thread_id: &str,
-        ignored: bool,
-    ) -> Result<super::types::ThreadSubscription, GitHubError> {
-        let url = format!(
-            "{}/notifications/threads/{}/subscription",
-            GITHUB_API_URL, thread_id
-        );
-
-        let response = self
-            .client
-            .put(&url)
-            .json(&serde_json::json!({ "ignored": ignored }))
-            .send()
-            .await?;
-
-        let status = response.status();
-
-        if status.is_success() {
-            Ok(response.json().await?)
         } else if status.as_u16() == 401 {
             Err(GitHubError::Unauthorized)
         } else {

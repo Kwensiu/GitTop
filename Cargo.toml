@@ -13,7 +13,6 @@ iced = { version = "0.14.0-dev", default-features = false, features = [
     "tokio",
     "image",
     "svg",
-    "advanced",
 ] }
 
 # Async runtime
@@ -39,18 +38,8 @@ chrono = { version = "0.4", default-features = false, features = [
 # Error handling
 thiserror = "2"
 
-# Secure credential storage
-keyring = { version = "3", features = [
-    "sync-secret-service",
-    "windows-native",
-    "apple-native",
-] }
-
 # Open URLs in browser
 open = "5"
-
-# Image loading for avatars
-image = "0.25"
 
 # SVG icons - Lucide icon set for CPU-efficient rendering
 icondata_lu = "0.1"
@@ -79,21 +68,29 @@ windows = { version = "0.62.2", features = [
 ] }
 # Windows toast notifications (WinRT) - with on_activated callback support
 tauri-winrt-notification = "0.7"
+# Secure credential storage (Windows)
+keyring = { version = "3", features = ["windows-native"] }
 
 # macOS-specific APIs
 [target.'cfg(target_os = "macos")'.dependencies]
 # Native macOS notifications via Objective-C runtime
 mac-notification-sys = "0.6"
+# Secure credential storage (macOS)
+keyring = { version = "3", features = ["apple-native"] }
 
 # Linux-specific APIs
 [target.'cfg(target_os = "linux")'.dependencies]
 # DBus notifications - zero-cost after send
 notify-rust = "4"
+# Secure credential storage (Linux)
+keyring = { version = "3", features = ["sync-secret-service"] }
 
 # FreeBSD-specific APIs
 [target.'cfg(target_os = "freebsd")'.dependencies]
 # DBus notifications - same as Linux
 notify-rust = "4"
+# Secure credential storage (FreeBSD)
+keyring = { version = "3", features = ["sync-secret-service"] }
 
 [profile.release]
 opt-level = 3

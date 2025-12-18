@@ -21,9 +21,6 @@ pub enum AuthError {
 
     #[error("Token validation failed: {0}")]
     ValidationFailed(String),
-
-    #[error("No token stored")]
-    NoToken,
 }
 
 /// Authentication manager handling token storage and validation.
