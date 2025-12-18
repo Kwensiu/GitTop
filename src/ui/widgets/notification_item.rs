@@ -4,6 +4,7 @@ use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Color, Element, Fill};
 
 use crate::github::types::{NotificationView, SubjectType};
+use crate::settings::IconTheme;
 use crate::ui::screens::notifications::NotificationMessage;
 use crate::ui::{icons, theme};
 
@@ -20,29 +21,35 @@ fn get_subject_color(subject_type: SubjectType) -> Color {
     }
 }
 
-/// Get the SVG icon for a subject type.
-fn subject_type_icon(subject_type: SubjectType) -> iced::widget::Svg<'static> {
+/// Get the icon for a subject type.
+fn subject_type_icon(
+    subject_type: SubjectType,
+    icon_theme: IconTheme,
+) -> Element<'static, NotificationMessage> {
     let color = get_subject_color(subject_type);
     match subject_type {
-        SubjectType::Issue => icons::icon_issue(14.0, color),
-        SubjectType::PullRequest => icons::icon_pull_request(14.0, color),
-        SubjectType::Release => icons::icon_release(14.0, color),
-        SubjectType::Discussion => icons::icon_discussion(14.0, color),
-        SubjectType::CheckSuite => icons::icon_check_suite(14.0, color),
-        SubjectType::Commit => icons::icon_commit(14.0, color),
-        SubjectType::RepositoryVulnerabilityAlert => icons::icon_security(14.0, color),
-        SubjectType::Unknown => icons::icon_unknown(14.0, color),
+        SubjectType::Issue => icons::icon_issue(14.0, color, icon_theme),
+        SubjectType::PullRequest => icons::icon_pull_request(14.0, color, icon_theme),
+        SubjectType::Release => icons::icon_release(14.0, color, icon_theme),
+        SubjectType::Discussion => icons::icon_discussion(14.0, color, icon_theme),
+        SubjectType::CheckSuite => icons::icon_check_suite(14.0, color, icon_theme),
+        SubjectType::Commit => icons::icon_commit(14.0, color, icon_theme),
+        SubjectType::RepositoryVulnerabilityAlert => icons::icon_security(14.0, color, icon_theme),
+        SubjectType::Unknown => icons::icon_unknown(14.0, color, icon_theme),
     }
 }
 
 /// Creates a notification item widget - optimized for minimal allocations.
-pub fn notification_item(notif: &NotificationView) -> Element<'_, NotificationMessage> {
+pub fn notification_item(
+    notif: &NotificationView,
+    icon_theme: IconTheme,
+) -> Element<'_, NotificationMessage> {
     // Title row
     let title = text(&notif.title).size(13).color(theme::TEXT_PRIMARY);
 
     // Meta row: icon + repo + reason
     let meta = row![
-        subject_type_icon(notif.subject_type),
+        subject_type_icon(notif.subject_type, icon_theme),
         Space::new().width(4),
         text(&notif.repo_full_name)
             .size(11)

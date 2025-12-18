@@ -56,6 +56,9 @@ image = "0.25"
 icondata_lu = "0.1"
 icondata_core = "0.1"
 
+# Cross-platform directories
+dirs = "6.0.0"
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -5,6 +5,7 @@ use iced::{Alignment, Element, Fill, Length, Padding};
 
 use super::screen::NotificationMessage;
 use crate::github::{SubjectType, UserInfo};
+use crate::settings::IconTheme;
 use crate::ui::{icons, theme};
 
 /// Sidebar width constant.
@@ -18,17 +19,18 @@ pub fn view_sidebar<'a>(
     selected_type: Option<SubjectType>,
     selected_repo: Option<&str>,
     total_count: usize,
+    icon_theme: IconTheme,
 ) -> Element<'a, NotificationMessage> {
     // Scrollable content (branding, types, repos)
     let scrollable_content = column![
         // App branding
-        view_branding(),
+        view_branding(icon_theme),
         Space::new().height(16),
         // Types section
-        view_types_section(type_counts, selected_type, total_count),
+        view_types_section(type_counts, selected_type, total_count, icon_theme),
         Space::new().height(16),
         // Repositories section
-        view_repos_section(repo_counts, selected_repo),
+        view_repos_section(repo_counts, selected_repo, icon_theme),
     ]
     .spacing(0)
     .padding([16, 12]);
@@ -39,7 +41,7 @@ pub fn view_sidebar<'a>(
             .height(Fill)
             .style(theme::scrollbar),
         // User section pinned at the bottom
-        container(view_user_section(user)).padding(Padding {
+        container(view_user_section(user, icon_theme)).padding(Padding {
             top: 0.0,
             right: 12.0,
             bottom: 16.0,
@@ -55,9 +57,9 @@ pub fn view_sidebar<'a>(
         .into()
 }
 
-fn view_branding<'a>() -> Element<'a, NotificationMessage> {
+fn view_branding<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
     row![
-        icons::icon_brand(20.0, theme::ACCENT_BLUE),
+        icons::icon_brand(20.0, theme::ACCENT_BLUE, icon_theme),
         Space::new().width(8),
         text("GitTop").size(18).color(theme::TEXT_PRIMARY),
     ]
@@ -69,13 +71,14 @@ fn view_types_section(
     type_counts: &[(SubjectType, usize)],
     selected_type: Option<SubjectType>,
     total_count: usize,
+    icon_theme: IconTheme,
 ) -> Element<'static, NotificationMessage> {
     let mut col = column![
         text("Types").size(11).color(theme::TEXT_MUTED),
         Space::new().height(8),
         // "All" option
-        sidebar_item_svg(
-            icons::icon_inbox(14.0, theme::TEXT_SECONDARY),
+        sidebar_item(
+            icons::icon_inbox(14.0, theme::TEXT_SECONDARY, icon_theme),
             "All".to_owned(),
             total_count,
             selected_type.is_none(),
@@ -92,8 +95,8 @@ fn view_types_section(
         } else {
             theme::TEXT_SECONDARY
         };
-        col = col.push(sidebar_item_svg(
-            subject_type_icon(*subject_type, icon_color),
+        col = col.push(sidebar_item(
+            subject_type_icon(*subject_type, icon_color, icon_theme),
             subject_type_label(*subject_type).to_owned(),
             *count,
             is_selected,
@@ -107,6 +110,7 @@ fn view_types_section(
 fn view_repos_section(
     repo_counts: &[(String, usize)],
     selected_repo: Option<&str>,
+    icon_theme: IconTheme,
 ) -> Element<'static, NotificationMessage> {
     let mut col = column![
         text("Repositories").size(11).color(theme::TEXT_MUTED),
@@ -124,8 +128,8 @@ fn view_repos_section(
         };
         // Extract just the repo name (after the /)
         let short_name = repo.split('/').next_back().unwrap_or(repo).to_owned();
-        col = col.push(sidebar_item_svg(
-            icons::icon_folder(14.0, icon_color),
+        col = col.push(sidebar_item(
+            icons::icon_folder(14.0, icon_color, icon_theme),
             short_name,
             *count,
             is_selected,
@@ -140,7 +144,10 @@ fn view_repos_section(
     col.into()
 }
 
-fn view_user_section<'a>(user: &'a UserInfo) -> Element<'a, NotificationMessage> {
+fn view_user_section<'a>(
+    user: &'a UserInfo,
+    icon_theme: IconTheme,
+) -> Element<'a, NotificationMessage> {
     column![
         container(Space::new().height(1))
             .width(Fill)
@@ -150,11 +157,15 @@ fn view_user_section<'a>(user: &'a UserInfo) -> Element<'a, NotificationMessage>
             }),
         Space::new().height(12),
         row![
-            icons::icon_user(14.0, theme::TEXT_SECONDARY),
+            icons::icon_user(14.0, theme::TEXT_SECONDARY, icon_theme),
             Space::new().width(8),
             text(&user.login).size(12).color(theme::TEXT_SECONDARY),
             Space::new().width(Fill),
-            button(icons::icon_power(12.0, theme::TEXT_MUTED))
+            button(icons::icon_settings(12.0, theme::TEXT_MUTED, icon_theme))
+                .style(theme::ghost_button)
+                .padding([4, 8])
+                .on_press(NotificationMessage::OpenSettings),
+            button(icons::icon_power(12.0, theme::TEXT_MUTED, icon_theme))
                 .style(theme::ghost_button)
                 .padding([4, 8])
                 .on_press(NotificationMessage::Logout),
@@ -164,23 +175,27 @@ fn view_user_section<'a>(user: &'a UserInfo) -> Element<'a, NotificationMessage>
     .into()
 }
 
-/// Get the SVG icon for a subject type.
-fn subject_type_icon(t: SubjectType, color: iced::Color) -> iced::widget::Svg<'static> {
+/// Get the icon for a subject type.
+fn subject_type_icon(
+    t: SubjectType,
+    color: iced::Color,
+    icon_theme: IconTheme,
+) -> Element<'static, NotificationMessage> {
     match t {
-        SubjectType::Issue => icons::icon_issue(14.0, color),
-        SubjectType::PullRequest => icons::icon_pull_request(14.0, color),
-        SubjectType::Release => icons::icon_release(14.0, color),
-        SubjectType::Discussion => icons::icon_discussion(14.0, color),
-        SubjectType::CheckSuite => icons::icon_check_suite(14.0, color),
-        SubjectType::Commit => icons::icon_commit(14.0, color),
-        SubjectType::RepositoryVulnerabilityAlert => icons::icon_security(14.0, color),
-        SubjectType::Unknown => icons::icon_unknown(14.0, color),
+        SubjectType::Issue => icons::icon_issue(14.0, color, icon_theme),
+        SubjectType::PullRequest => icons::icon_pull_request(14.0, color, icon_theme),
+        SubjectType::Release => icons::icon_release(14.0, color, icon_theme),
+        SubjectType::Discussion => icons::icon_discussion(14.0, color, icon_theme),
+        SubjectType::CheckSuite => icons::icon_check_suite(14.0, color, icon_theme),
+        SubjectType::Commit => icons::icon_commit(14.0, color, icon_theme),
+        SubjectType::RepositoryVulnerabilityAlert => icons::icon_security(14.0, color, icon_theme),
+        SubjectType::Unknown => icons::icon_unknown(14.0, color, icon_theme),
     }
 }
 
-/// Sidebar item with SVG icon, label, count, and selection state.
-fn sidebar_item_svg<'a>(
-    icon: iced::widget::Svg<'a>,
+/// Sidebar item with icon element, label, count, and selection state.
+fn sidebar_item<'a>(
+    icon: Element<'a, NotificationMessage>,
     label: String,
     count: usize,
     is_selected: bool,

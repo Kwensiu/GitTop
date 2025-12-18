@@ -8,6 +8,7 @@ use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Fill, Task};
 
 use crate::github::{GitHubClient, GitHubError, NotificationView, SubjectType, UserInfo};
+use crate::settings::IconTheme;
 use crate::ui::{icons, theme};
 
 use super::group::{view_group_header, view_group_items};
@@ -56,6 +57,8 @@ pub enum NotificationMessage {
     MarkAsDoneComplete(String, Result<(), GitHubError>),
     MuteThread(String),
     MuteThreadComplete(String, Result<(), GitHubError>),
+    // Navigation
+    OpenSettings,
 }
 
 impl NotificationsScreen {
@@ -217,10 +220,14 @@ impl NotificationsScreen {
                 }
                 Task::none()
             }
+            NotificationMessage::OpenSettings => {
+                // Handled by parent (app.rs)
+                Task::none()
+            }
         }
     }
 
-    pub fn view(&self) -> Element<'_, NotificationMessage> {
+    pub fn view(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
         row![
             // Sidebar
             view_sidebar(
@@ -230,22 +237,26 @@ impl NotificationsScreen {
                 self.filters.selected_type,
                 self.filters.selected_repo.as_deref(),
                 self.all_notifications.len(),
+                icon_theme,
             ),
             // Main content area
-            self.view_main_content()
+            self.view_main_content(icon_theme)
         ]
         .height(Fill)
         .into()
     }
 
-    fn view_main_content(&self) -> Element<'_, NotificationMessage> {
-        column![self.view_content_header(), self.view_content()]
-            .width(Fill)
-            .height(Fill)
-            .into()
+    fn view_main_content(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
+        column![
+            self.view_content_header(icon_theme),
+            self.view_content(icon_theme)
+        ]
+        .width(Fill)
+        .height(Fill)
+        .into()
     }
 
-    fn view_content_header(&self) -> Element<'_, NotificationMessage> {
+    fn view_content_header(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
         let unread_count = self
             .filtered_notifications
             .iter()
@@ -256,7 +267,7 @@ impl NotificationsScreen {
 
         let sync_status: Element<'_, NotificationMessage> = if self.is_loading {
             row![
-                icons::icon_refresh(11.0, theme::TEXT_MUTED),
+                icons::icon_refresh(11.0, theme::TEXT_MUTED, icon_theme),
                 Space::new().width(4),
                 text("Syncing...").size(11).color(theme::TEXT_MUTED),
             ]
@@ -264,7 +275,7 @@ impl NotificationsScreen {
             .into()
         } else {
             row![
-                icons::icon_check(11.0, theme::ACCENT_GREEN),
+                icons::icon_check(11.0, theme::ACCENT_GREEN, icon_theme),
                 Space::new().width(4),
                 text("Synced").size(11).color(theme::ACCENT_GREEN),
             ]
@@ -287,7 +298,7 @@ impl NotificationsScreen {
         let mark_all_btn = if unread_count > 0 {
             button(
                 row![
-                    icons::icon_check(11.0, theme::TEXT_SECONDARY),
+                    icons::icon_check(11.0, theme::TEXT_SECONDARY, icon_theme),
                     Space::new().width(4),
                     text("Mark all read").size(11),
                 ]
@@ -299,7 +310,7 @@ impl NotificationsScreen {
         } else {
             button(
                 row![
-                    icons::icon_check(11.0, theme::TEXT_MUTED),
+                    icons::icon_check(11.0, theme::TEXT_MUTED, icon_theme),
                     Space::new().width(4),
                     text("Mark all read").size(11).color(theme::TEXT_MUTED),
                 ]
@@ -309,7 +320,7 @@ impl NotificationsScreen {
             .padding([4, 8])
         };
 
-        let refresh_btn = button(icons::icon_refresh(14.0, theme::TEXT_SECONDARY))
+        let refresh_btn = button(icons::icon_refresh(14.0, theme::TEXT_SECONDARY, icon_theme))
             .style(theme::ghost_button)
             .padding(6)
             .on_press(NotificationMessage::Refresh);
@@ -334,17 +345,17 @@ impl NotificationsScreen {
             .into()
     }
 
-    fn view_content(&self) -> Element<'_, NotificationMessage> {
+    fn view_content(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
         if self.is_loading && self.all_notifications.is_empty() {
             return view_loading();
         }
 
         if let Some(ref error) = self.error_message {
-            return view_error(error);
+            return view_error(error, icon_theme);
         }
 
         if self.filtered_notifications.is_empty() {
-            return view_empty(self.filters.show_all);
+            return view_empty(self.filters.show_all, icon_theme);
         }
 
         // Build content with groups
@@ -355,10 +366,10 @@ impl NotificationsScreen {
                 continue;
             }
 
-            content = content.push(view_group_header(group, group_idx));
+            content = content.push(view_group_header(group, group_idx, icon_theme));
 
             if group.is_expanded {
-                content = content.push(view_group_items(group));
+                content = content.push(view_group_items(group, icon_theme));
             }
 
             content = content.push(Space::new().height(8));

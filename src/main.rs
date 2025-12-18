@@ -4,6 +4,7 @@
 //! No browser engine required. Pure Rust. Pure performance.
 
 mod github;
+mod settings;
 mod ui;
 
 use iced::{application, Font, Size};

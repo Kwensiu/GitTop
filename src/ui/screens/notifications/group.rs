@@ -5,6 +5,7 @@ use iced::{Alignment, Element, Fill};
 
 use super::helper::NotificationGroup;
 use super::screen::NotificationMessage;
+use crate::settings::IconTheme;
 use crate::ui::widgets::notification_item;
 use crate::ui::{icons, theme};
 
@@ -12,11 +13,12 @@ use crate::ui::{icons, theme};
 pub fn view_group_header<'a>(
     group: &'a NotificationGroup,
     group_index: usize,
+    icon_theme: IconTheme,
 ) -> Element<'a, NotificationMessage> {
     let chevron = if group.is_expanded {
-        icons::icon_colored(&icondata_lu::LuChevronDown, 12.0, theme::TEXT_MUTED)
+        icons::icon_chevron_down(12.0, theme::TEXT_MUTED, icon_theme)
     } else {
-        icons::icon_colored(&icondata_lu::LuChevronRight, 12.0, theme::TEXT_MUTED)
+        icons::icon_chevron_right(12.0, theme::TEXT_MUTED, icon_theme)
     };
 
     button(
@@ -39,12 +41,15 @@ pub fn view_group_header<'a>(
 }
 
 /// Render the notification items within an expanded group.
-pub fn view_group_items<'a>(group: &'a NotificationGroup) -> Element<'a, NotificationMessage> {
+pub fn view_group_items<'a>(
+    group: &'a NotificationGroup,
+    icon_theme: IconTheme,
+) -> Element<'a, NotificationMessage> {
     let items = group
         .notifications
         .iter()
         .enumerate()
-        .map(|(idx, n)| (idx, notification_item(n)));
+        .map(|(idx, n)| (idx, notification_item(n, icon_theme)));
 
     keyed_column(items).spacing(2).into()
 }

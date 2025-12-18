@@ -4,6 +4,7 @@ use iced::widget::{button, column, container, text, Space};
 use iced::{Alignment, Element, Fill};
 
 use super::screen::NotificationMessage;
+use crate::settings::IconTheme;
 use crate::ui::{icons, theme};
 
 /// Render the loading state.
@@ -22,9 +23,9 @@ pub fn view_loading<'a>() -> Element<'a, NotificationMessage> {
 }
 
 /// Render the error state with retry button.
-pub fn view_error<'a>(error: &'a str) -> Element<'a, NotificationMessage> {
+pub fn view_error<'a>(error: &'a str, icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
     let content = column![
-        icons::icon_alert(32.0, theme::ACCENT_ORANGE),
+        icons::icon_alert(32.0, theme::ACCENT_ORANGE, icon_theme),
         Space::new().height(16),
         text("Failed to load notifications")
             .size(16)
@@ -49,7 +50,7 @@ pub fn view_error<'a>(error: &'a str) -> Element<'a, NotificationMessage> {
 }
 
 /// Render the empty state (no notifications).
-pub fn view_empty<'a>(show_all: bool) -> Element<'a, NotificationMessage> {
+pub fn view_empty<'a>(show_all: bool, icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
     let message = if show_all {
         "No notifications yet"
     } else {
@@ -57,7 +58,7 @@ pub fn view_empty<'a>(show_all: bool) -> Element<'a, NotificationMessage> {
     };
 
     let content = column![
-        icons::icon_circle_check(48.0, theme::ACCENT_GREEN),
+        icons::icon_circle_check(48.0, theme::ACCENT_GREEN, icon_theme),
         Space::new().height(16),
         text(message).size(16).color(theme::TEXT_PRIMARY),
         Space::new().height(8),
