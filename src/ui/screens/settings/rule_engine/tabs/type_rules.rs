@@ -1,20 +1,34 @@
-//! Type Rules tab for Rule Engine.
+//! Type Rules tab for Rule Engine - with grouped collapsible sections.
 
-use iced::widget::{column, container, text, Space};
-use iced::{Alignment, Element, Fill};
+use std::collections::{HashMap, HashSet};
+
+use iced::widget::{button, column, container, pick_list, row, text, text_input, Space};
+use iced::{Alignment, Element, Fill, Length};
 
 use crate::settings::IconTheme;
 use crate::ui::icons;
-use crate::ui::screens::settings::rule_engine::rules::NotificationRuleSet;
+use crate::ui::screens::settings::rule_engine::rules::{NotificationRuleSet, RuleAction, TypeRule};
 use crate::ui::theme;
 
 use super::super::components::{view_empty_state, view_type_rule_card};
 use super::super::messages::RuleEngineMessage;
 
-use iced::widget::{button, pick_list, row, text_input};
-use iced::Length;
+/// Groups type rules by notification_type and returns them in a sorted order.
+fn group_type_rules(rules: &[TypeRule]) -> Vec<(String, Vec<&TypeRule>)> {
+    let mut groups: HashMap<String, Vec<&TypeRule>> = HashMap::new();
 
-use crate::ui::screens::settings::rule_engine::rules::RuleAction;
+    for rule in rules {
+        groups
+            .entry(rule.notification_type.clone())
+            .or_default()
+            .push(rule);
+    }
+
+    // Sort groups alphabetically by type name
+    let mut sorted: Vec<_> = groups.into_iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    sorted
+}
 
 pub fn view_type_rules_tab(
     rules: &NotificationRuleSet,
@@ -24,10 +38,13 @@ pub fn view_type_rules_tab(
     available_accounts: &[String],
     new_priority: i32,
     new_action: RuleAction,
+    expanded_groups: &HashSet<String>,
 ) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
 
+    // ========================================================================
     // Form Section
+    // ========================================================================
     let type_input = container(
         column![
             text("Type").size(12).color(p.text_secondary),
@@ -136,7 +153,7 @@ pub fn view_type_rules_tab(
         column![Space::new().height(19), add_btn].spacing(0),
     ]
     .spacing(12)
-    .align_y(Alignment::End); // Align to bottom so inputs align with button
+    .align_y(Alignment::End);
 
     let form_section = container(form_row)
         .padding(16)
@@ -157,6 +174,9 @@ pub fn view_type_rules_tab(
     ]
     .spacing(4);
 
+    // ========================================================================
+    // Grouped Rules Section
+    // ========================================================================
     let mut content = column![
         header,
         Space::new().height(16),
@@ -167,9 +187,65 @@ pub fn view_type_rules_tab(
     if rules.type_rules.is_empty() {
         content = content.push(view_empty_state("No type rules configured.", icon_theme));
     } else {
-        for rule in &rules.type_rules {
-            content = content.push(view_type_rule_card(rule, icon_theme));
-            content = content.push(Space::new().height(8));
+        // Group rules by notification_type
+        let grouped = group_type_rules(&rules.type_rules);
+
+        for (group_name, group_rules) in grouped {
+            let is_expanded = expanded_groups.contains(&group_name);
+            let count = group_rules.len();
+
+            // Group header with chevron
+            let chevron = if is_expanded {
+                icons::icon_chevron_down(12.0, p.text_secondary, icon_theme)
+            } else {
+                icons::icon_chevron_right(12.0, p.text_secondary, icon_theme)
+            };
+
+            let group_header_row = row![
+                chevron,
+                Space::new().width(8),
+                text(group_name.clone()).size(14).color(p.text_primary),
+                Space::new().width(8),
+                text(format!("({} rules)", count))
+                    .size(12)
+                    .color(p.text_muted),
+            ]
+            .align_y(Alignment::Center)
+            .padding([8, 12]);
+
+            let group_name_clone = group_name.clone();
+            let group_header_btn = button(group_header_row)
+                .style(move |theme, status| (theme::ghost_button)(theme, status))
+                .on_press(RuleEngineMessage::ToggleTypeGroup(group_name_clone))
+                .width(Fill);
+
+            let group_header_container =
+                container(group_header_btn).style(move |_| container::Style {
+                    background: Some(iced::Background::Color(p.bg_control)),
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+
+            content = content.push(group_header_container);
+            content = content.push(Space::new().height(4));
+
+            // Show rules only if expanded
+            if is_expanded {
+                let mut rules_column = column![].spacing(8);
+
+                for rule in group_rules {
+                    rules_column = rules_column.push(view_type_rule_card(rule, icon_theme));
+                }
+
+                // Add left indent using a row with space
+                let indented_rules = row![Space::new().width(24), rules_column];
+
+                content = content.push(indented_rules);
+                content = content.push(Space::new().height(8));
+            }
         }
     }
 

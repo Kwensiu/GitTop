@@ -115,17 +115,23 @@ impl LoginScreen {
             button(
                 text("Authenticating...")
                     .size(14)
+                    .width(Fill)
                     .align_x(Alignment::Center),
             )
             .style(theme::primary_button)
             .width(Fill)
             .padding(12)
         } else {
-            button(text("Sign In").size(14).align_x(Alignment::Center))
-                .style(theme::primary_button)
-                .on_press(LoginMessage::Submit)
-                .width(Fill)
-                .padding(12)
+            button(
+                text("Sign In")
+                    .size(14)
+                    .width(Fill)
+                    .align_x(Alignment::Center),
+            )
+            .style(theme::primary_button)
+            .on_press(LoginMessage::Submit)
+            .width(Fill)
+            .padding(12)
         };
 
         let error_text: Element<'_, LoginMessage> = if let Some(ref error) = self.error_message {
@@ -157,6 +163,7 @@ impl LoginScreen {
             Space::new().height(24),
             help_text,
         ]
+        .align_x(Alignment::Center)
         .width(Length::Fixed(320.0));
 
         let content = column![

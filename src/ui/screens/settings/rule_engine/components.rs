@@ -123,7 +123,7 @@ fn view_warning_row(
 ///
 /// This extracts the common pattern shared by all rule card types:
 /// - Card container with bg_card background and rounded corners
-/// - Info content on the left, toggler on the right
+/// - Info content on the left (clickable for inspector), toggler on the right
 /// - Context menu with Duplicate and Delete options
 fn view_rule_card<F1, F2, F3>(
     id: String,
@@ -140,11 +140,19 @@ where
 {
     let id_toggle = id.clone();
     let id_dup = id.clone();
-    let id_delete = id;
+    let id_delete = id.clone();
+    let id_select = id;
+
+    // Make info content clickable to open inspector
+    let clickable_info = button(info_content)
+        .style(theme::ghost_button)
+        .padding(0)
+        .on_press(RuleEngineMessage::SelectRule(id_select));
 
     let card_content = container(
         row![
-            info_content,
+            clickable_info,
+            Space::new().width(8),
             toggler(enabled)
                 .on_toggle(move |e| on_toggle(id_toggle.clone(), e))
                 .size(18),

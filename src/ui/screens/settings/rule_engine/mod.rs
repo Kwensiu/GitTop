@@ -9,6 +9,7 @@
 //! - `messages.rs` - All RuleEngineMessage variants
 
 mod components;
+mod inspector;
 mod messages;
 mod screen;
 mod tabs;

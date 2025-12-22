@@ -76,6 +76,30 @@ fn default_priority() -> i32 {
 }
 
 // ============================================================================
+// OVERVIEW HELPERS
+// ============================================================================
+
+/// High-impact rule info for Overview display.
+#[derive(Debug, Clone)]
+pub struct HighImpactRule {
+    pub name: String,
+    pub rule_type: String,
+    pub action: RuleAction,
+    pub priority: i32,
+}
+
+/// Helper to check if current time string "HH:MM" is in range [start, end].
+/// Handles wrap-around (e.g. 22:00 -> 07:00).
+fn is_time_in_range(current: &str, start: &str, end: &str) -> bool {
+    if start <= end {
+        current >= start && current <= end
+    } else {
+        // crossing midnight
+        current >= start || current <= end
+    }
+}
+
+// ============================================================================
 // RULE TYPES
 // ============================================================================
 
@@ -276,6 +300,186 @@ impl NotificationRuleSet {
             + self.account_rules.iter().filter(|r| r.enabled).count()
             + self.org_rules.iter().filter(|r| r.enabled).count()
             + self.type_rules.iter().filter(|r| r.enabled).count()
+    }
+
+    // ========================================================================
+    // Overview Stats Helpers
+    // ========================================================================
+
+    /// Count rules with Hide (suppress) action.
+    pub fn count_suppress_rules(&self) -> usize {
+        if !self.enabled {
+            return 0;
+        }
+        let mut count = 0;
+        count += self
+            .time_rules
+            .iter()
+            .filter(|r| r.enabled && r.action == RuleAction::Hide)
+            .count();
+        count += self
+            .schedule_rules
+            .iter()
+            .filter(|r| r.enabled && r.action == RuleAction::Hide)
+            .count();
+        count += self
+            .account_rules
+            .iter()
+            .filter(|r| r.enabled && r.action == RuleAction::Hide)
+            .count();
+        count += self
+            .org_rules
+            .iter()
+            .filter(|r| r.enabled && r.action == RuleAction::Hide)
+            .count();
+        count += self
+            .type_rules
+            .iter()
+            .filter(|r| r.enabled && r.action == RuleAction::Hide)
+            .count();
+        count
+    }
+
+    /// Count rules with priority >= 50.
+    pub fn count_high_priority_rules(&self) -> usize {
+        if !self.enabled {
+            return 0;
+        }
+        let mut count = 0;
+        count += self
+            .time_rules
+            .iter()
+            .filter(|r| r.enabled && r.priority >= PRIORITY_HIGH)
+            .count();
+        count += self
+            .schedule_rules
+            .iter()
+            .filter(|r| r.enabled && r.priority >= PRIORITY_HIGH)
+            .count();
+        count += self
+            .org_rules
+            .iter()
+            .filter(|r| r.enabled && r.priority >= PRIORITY_HIGH)
+            .count();
+        count += self
+            .type_rules
+            .iter()
+            .filter(|r| r.enabled && r.priority >= PRIORITY_HIGH)
+            .count();
+        count
+    }
+
+    /// Count time/schedule rules that are currently active based on current time.
+    pub fn count_active_time_based_rules(&self, now: &chrono::DateTime<chrono::Local>) -> usize {
+        use chrono::Datelike;
+
+        if !self.enabled {
+            return 0;
+        }
+
+        let time_str = now.format("%H:%M").to_string();
+        let weekday = now.weekday().num_days_from_sunday() as u8;
+
+        let mut count = 0;
+
+        // Check time rules
+        for rule in &self.time_rules {
+            if rule.enabled && is_time_in_range(&time_str, &rule.start_time, &rule.end_time) {
+                count += 1;
+            }
+        }
+
+        // Check schedule rules
+        for rule in &self.schedule_rules {
+            if rule.enabled && rule.days.contains(&weekday) {
+                let in_time = if let (Some(start), Some(end)) = (&rule.start_time, &rule.end_time) {
+                    is_time_in_range(&time_str, start, end)
+                } else {
+                    true
+                };
+                if in_time {
+                    count += 1;
+                }
+            }
+        }
+
+        count
+    }
+
+    /// Collected high-impact rule info for Overview display.
+    pub fn get_high_impact_rules(&self) -> Vec<HighImpactRule> {
+        if !self.enabled {
+            return Vec::new();
+        }
+
+        let mut rules = Vec::new();
+
+        // Time rules with Hide or high priority
+        for rule in &self.time_rules {
+            if rule.enabled && (rule.action == RuleAction::Hide || rule.priority >= PRIORITY_HIGH) {
+                rules.push(HighImpactRule {
+                    name: rule.name.clone(),
+                    rule_type: "Time".to_string(),
+                    action: rule.action,
+                    priority: rule.priority,
+                });
+            }
+        }
+
+        // Schedule rules with Hide or high priority
+        for rule in &self.schedule_rules {
+            if rule.enabled && (rule.action == RuleAction::Hide || rule.priority >= PRIORITY_HIGH) {
+                rules.push(HighImpactRule {
+                    name: rule.name.clone(),
+                    rule_type: "Schedule".to_string(),
+                    action: rule.action,
+                    priority: rule.priority,
+                });
+            }
+        }
+
+        // Account rules with Hide action (accounts don't have priority)
+        for rule in &self.account_rules {
+            if rule.enabled && rule.action == RuleAction::Hide {
+                rules.push(HighImpactRule {
+                    name: rule.account.clone(),
+                    rule_type: "Account".to_string(),
+                    action: rule.action,
+                    priority: 0,
+                });
+            }
+        }
+
+        // Org rules with Hide or high priority
+        for rule in &self.org_rules {
+            if rule.enabled && (rule.action == RuleAction::Hide || rule.priority >= PRIORITY_HIGH) {
+                rules.push(HighImpactRule {
+                    name: rule.org.clone(),
+                    rule_type: "Org".to_string(),
+                    action: rule.action,
+                    priority: rule.priority,
+                });
+            }
+        }
+
+        // Type rules with Hide or high priority
+        for rule in &self.type_rules {
+            if rule.enabled && (rule.action == RuleAction::Hide || rule.priority >= PRIORITY_HIGH) {
+                let name = if let Some(acc) = &rule.account {
+                    format!("{} ({})", rule.notification_type, acc)
+                } else {
+                    format!("{} (Global)", rule.notification_type)
+                };
+                rules.push(HighImpactRule {
+                    name,
+                    rule_type: "Type".to_string(),
+                    action: rule.action,
+                    priority: rule.priority,
+                });
+            }
+        }
+
+        rules
     }
 }
 

@@ -27,6 +27,12 @@ pub struct RuleEngineScreen {
     pub new_type_rule_account: String,
     pub new_type_rule_priority: i32,
     pub new_type_rule_action: RuleAction,
+
+    // Type Rules Grouping State
+    pub expanded_type_groups: std::collections::HashSet<String>,
+
+    // Rule Inspector State
+    pub selected_rule_id: Option<String>,
 }
 
 impl RuleEngineScreen {
@@ -42,10 +48,12 @@ impl RuleEngineScreen {
                 .iter()
                 .map(|a| a.username.clone())
                 .collect(),
-            new_type_rule_type: crate::github::types::NotificationReason::Mention, // Default type
+            new_type_rule_type: crate::github::types::NotificationReason::Mention,
             new_type_rule_account: "Global".to_string(),
             new_type_rule_priority: 0,
             new_type_rule_action: RuleAction::Show,
+            expanded_type_groups: std::collections::HashSet::new(),
+            selected_rule_id: None,
         }
     }
 
@@ -254,6 +262,22 @@ impl RuleEngineScreen {
 
                 Task::none()
             }
+            RuleEngineMessage::ToggleTypeGroup(group_name) => {
+                if self.expanded_type_groups.contains(&group_name) {
+                    self.expanded_type_groups.remove(&group_name);
+                } else {
+                    self.expanded_type_groups.insert(group_name);
+                }
+                Task::none()
+            }
+            RuleEngineMessage::SelectRule(rule_id) => {
+                self.selected_rule_id = Some(rule_id);
+                Task::none()
+            }
+            RuleEngineMessage::ClearRuleSelection => {
+                self.selected_rule_id = None;
+                Task::none()
+            }
         }
     }
 
@@ -266,7 +290,13 @@ impl RuleEngineScreen {
         let sidebar = self.view_sidebar();
         let content = self.view_tab_content();
 
-        let main_area = row![sidebar, content].height(Fill);
+        // Build main area with optional inspector
+        let main_area = if let Some(ref rule_id) = self.selected_rule_id {
+            let inspector = super::inspector::view_inspector(&self.rules, rule_id, self.icon_theme);
+            row![sidebar, content, inspector].height(Fill)
+        } else {
+            row![sidebar, content].height(Fill)
+        };
 
         column![header, main_area]
             .spacing(0)
@@ -434,7 +464,7 @@ impl RuleEngineScreen {
         let t = self.icon_theme;
 
         let content: Element<'_, RuleEngineMessage> = match self.selected_tab {
-            RuleTab::Overview => tabs::view_overview_tab(&self.rules),
+            RuleTab::Overview => tabs::view_overview_tab(&self.rules, t),
             RuleTab::TimeRules => tabs::view_time_rules_tab(&self.rules, t),
             RuleTab::ScheduleRules => tabs::view_schedule_rules_tab(&self.rules, t),
             RuleTab::AccountRules => tabs::view_account_rules_tab(&self.rules, t),
@@ -447,6 +477,7 @@ impl RuleEngineScreen {
                 &self.accounts,
                 self.new_type_rule_priority,
                 self.new_type_rule_action,
+                &self.expanded_type_groups,
             ),
         };
 

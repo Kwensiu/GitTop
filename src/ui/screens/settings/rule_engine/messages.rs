@@ -53,6 +53,16 @@ pub enum RuleEngineMessage {
     NewTypeRulePriorityChanged(i32),
     NewTypeRuleActionChanged(crate::ui::screens::settings::rule_engine::rules::RuleAction),
     AddTypeRule,
+
+    // Type Rule Grouping
+    /// Toggle a type rule group (expand/collapse)
+    ToggleTypeGroup(String),
+
+    // Rule Inspector
+    /// Select a rule for inspection
+    SelectRule(String),
+    /// Clear rule selection (close inspector)
+    ClearRuleSelection,
 }
 
 /// Rule Engine tabs for navigation.
