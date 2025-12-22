@@ -329,7 +329,7 @@ fn view_schedule_config<'a>(
         ]
         .padding([0, 24])
     } else {
-        column![].into()
+        column![]
     };
 
     // Section 4: Outside Schedule Behavior

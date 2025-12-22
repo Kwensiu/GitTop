@@ -30,14 +30,12 @@ fn parse_cli_args() {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--mock-notifications" || args[i] == "-m" {
-            if i + 1 < args.len() {
-                if let Ok(count) = args[i + 1].parse::<usize>() {
-                    MOCK_NOTIFICATION_COUNT.store(count, Ordering::Relaxed);
-                    eprintln!("[SPECS] Mock notifications enabled: {}", count);
-                }
-                i += 1;
+        if (args[i] == "--mock-notifications" || args[i] == "-m") && i + 1 < args.len() {
+            if let Ok(count) = args[i + 1].parse::<usize>() {
+                MOCK_NOTIFICATION_COUNT.store(count, Ordering::Relaxed);
+                eprintln!("[SPECS] Mock notifications enabled: {}", count);
             }
+            i += 1;
         }
         i += 1;
     }

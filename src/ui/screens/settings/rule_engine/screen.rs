@@ -487,11 +487,13 @@ impl RuleEngineScreen {
                 let content = tabs::view_type_rules_tab(
                     &self.rules,
                     t,
-                    self.new_type_rule_type,
-                    &self.new_type_rule_account,
+                    tabs::TypeRuleFormState {
+                        notification_type: self.new_type_rule_type,
+                        account: &self.new_type_rule_account,
+                        priority: self.new_type_rule_priority,
+                        action: self.new_type_rule_action,
+                    },
                     &self.accounts,
-                    self.new_type_rule_priority,
-                    self.new_type_rule_action,
                     &self.expanded_type_groups,
                 );
                 container(

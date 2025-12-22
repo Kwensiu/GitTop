@@ -72,7 +72,7 @@ pub enum App {
     /// Login screen - no auth.
     Login(LoginScreen),
     /// Authenticated state with shared context.
-    Authenticated(Screen, AppContext),
+    Authenticated(Box<Screen>, AppContext),
 }
 
 /// Where the Rule Engine was opened from (for back navigation).
@@ -147,7 +147,7 @@ impl App {
         match self {
             App::Loading => self.update_loading(message),
             App::Login(_) => self.update_login(message),
-            App::Authenticated(screen, _) => match screen {
+            App::Authenticated(boxed_screen, _) => match &mut **boxed_screen {
                 Screen::Notifications(_) => self.update_notifications(message),
                 Screen::Settings(_) => self.update_settings(message),
                 Screen::RuleEngine(_, _) => self.update_rule_engine(message),
@@ -174,7 +174,7 @@ impl App {
                 let (notif_screen, task) =
                     NotificationsScreen::new(session.client.clone(), session.user.clone());
                 let ctx = AppContext::new(settings, sessions);
-                *self = App::Authenticated(Screen::Notifications(notif_screen), ctx);
+                *self = App::Authenticated(Box::new(Screen::Notifications(notif_screen)), ctx);
                 return task.map(Message::Notifications);
             } else {
                 // Load settings to ensure correct theme on Login screen
@@ -217,7 +217,7 @@ impl App {
 
             let (notif_screen, task) = NotificationsScreen::new(client, user);
             let ctx = AppContext::new(settings, sessions);
-            *self = App::Authenticated(Screen::Notifications(notif_screen), ctx);
+            *self = App::Authenticated(Box::new(Screen::Notifications(notif_screen)), ctx);
             return task.map(Message::Notifications);
         }
 
@@ -225,7 +225,11 @@ impl App {
     }
 
     fn update_notifications(&mut self, message: Message) -> Task<Message> {
-        let App::Authenticated(Screen::Notifications(screen), ctx) = self else {
+        let App::Authenticated(boxed_screen, ctx) = self else {
+            return Task::none();
+        };
+
+        let Screen::Notifications(screen) = &mut **boxed_screen else {
             return Task::none();
         };
 
@@ -275,7 +279,7 @@ impl App {
                     notif_screen.set_cross_account_priority(cross_account_priority);
 
                     *self = App::Authenticated(
-                        Screen::Notifications(notif_screen),
+                        Box::new(Screen::Notifications(notif_screen)),
                         AppContext {
                             settings: ctx.settings.clone(),
                             sessions: ctx.sessions.clone(),
@@ -299,7 +303,11 @@ impl App {
     }
 
     fn update_settings(&mut self, message: Message) -> Task<Message> {
-        let App::Authenticated(Screen::Settings(screen), ctx) = self else {
+        let App::Authenticated(boxed_screen, ctx) = self else {
+            return Task::none();
+        };
+
+        let Screen::Settings(screen) = &mut **boxed_screen else {
             return Task::none();
         };
 
@@ -386,7 +394,11 @@ impl App {
     }
 
     fn update_rule_engine(&mut self, message: Message) -> Task<Message> {
-        let App::Authenticated(Screen::RuleEngine(screen, origin), ctx) = self else {
+        let App::Authenticated(boxed_screen, ctx) = self else {
+            return Task::none();
+        };
+
+        let Screen::RuleEngine(screen, origin) = &mut **boxed_screen else {
             return Task::none();
         };
 
@@ -399,7 +411,7 @@ impl App {
                 RuleEngineOrigin::Settings => {
                     let settings_screen = SettingsScreen::new(ctx.settings.clone());
                     *self = App::Authenticated(
-                        Screen::Settings(settings_screen),
+                        Box::new(Screen::Settings(settings_screen)),
                         AppContext {
                             settings: ctx.settings.clone(),
                             sessions: ctx.sessions.clone(),
@@ -411,7 +423,7 @@ impl App {
                         let (notif_screen, task) =
                             NotificationsScreen::new(session.client.clone(), session.user.clone());
                         *self = App::Authenticated(
-                            Screen::Notifications(notif_screen),
+                            Box::new(Screen::Notifications(notif_screen)),
                             AppContext {
                                 settings: ctx.settings.clone(),
                                 sessions: ctx.sessions.clone(),
@@ -432,11 +444,13 @@ impl App {
     // ========================================================================
 
     fn handle_tick(&mut self) -> Task<Message> {
-        if let App::Authenticated(Screen::Notifications(screen), _) = self {
-            if !screen.is_loading {
-                return screen
-                    .update(NotificationMessage::Refresh)
-                    .map(Message::Notifications);
+        if let App::Authenticated(boxed_screen, _) = self {
+            if let Screen::Notifications(screen) = &mut **boxed_screen {
+                if !screen.is_loading {
+                    return screen
+                        .update(NotificationMessage::Refresh)
+                        .map(Message::Notifications);
+                }
             }
         }
         Task::none()
@@ -462,13 +476,15 @@ impl App {
 
                 // If coming back from hidden, trigger a refresh
                 if was_hidden {
-                    if let App::Authenticated(Screen::Notifications(screen), _) = self {
-                        return Task::batch([
-                            window_task,
-                            screen
-                                .update(NotificationMessage::Refresh)
-                                .map(Message::Notifications),
-                        ]);
+                    if let App::Authenticated(boxed_screen, _) = self {
+                        if let Screen::Notifications(screen) = &mut **boxed_screen {
+                            return Task::batch([
+                                window_task,
+                                screen
+                                    .update(NotificationMessage::Refresh)
+                                    .map(Message::Notifications),
+                            ]);
+                        }
                     }
                 }
 
@@ -532,7 +548,8 @@ impl App {
         };
 
         // Sync settings from SettingsScreen if coming from there
-        let settings = match current_screen {
+        // Sync settings from SettingsScreen if coming from there
+        let settings = match &**current_screen {
             Screen::Settings(screen) => screen.settings.clone(),
             _ => ctx.settings.clone(),
         };
@@ -541,7 +558,7 @@ impl App {
             let (notif_screen, task) =
                 NotificationsScreen::new(session.client.clone(), session.user.clone());
             *self = App::Authenticated(
-                Screen::Notifications(notif_screen),
+                Box::new(Screen::Notifications(notif_screen)),
                 AppContext {
                     settings,
                     sessions: ctx.sessions.clone(),
@@ -561,7 +578,7 @@ impl App {
 
         let settings_screen = SettingsScreen::new(ctx.settings.clone());
         *self = App::Authenticated(
-            Screen::Settings(settings_screen),
+            Box::new(Screen::Settings(settings_screen)),
             AppContext {
                 settings: ctx.settings.clone(),
                 sessions: ctx.sessions.clone(),
@@ -577,7 +594,8 @@ impl App {
         };
 
         // Sync settings from SettingsScreen if coming from there
-        let settings = match current_screen {
+        // Sync settings from SettingsScreen if coming from there
+        let settings = match &**current_screen {
             Screen::Settings(screen) => screen.settings.clone(),
             _ => ctx.settings.clone(),
         };
@@ -585,7 +603,7 @@ impl App {
         let rules = NotificationRuleSet::load();
         let rule_engine_screen = RuleEngineScreen::new(rules, settings.clone());
         *self = App::Authenticated(
-            Screen::RuleEngine(rule_engine_screen, origin),
+            Box::new(Screen::RuleEngine(rule_engine_screen, origin)),
             AppContext {
                 settings,
                 sessions: ctx.sessions.clone(),
@@ -603,17 +621,19 @@ impl App {
         window_state::set_hidden(true);
 
         // Clear notification data to free memory
-        if let App::Authenticated(Screen::Notifications(screen), _) = self {
-            screen.all_notifications.clear();
-            screen.all_notifications.shrink_to_fit();
-            screen.filtered_notifications.clear();
-            screen.filtered_notifications.shrink_to_fit();
-            screen.groups.clear();
-            screen.groups.shrink_to_fit();
-            screen.type_counts.clear();
-            screen.type_counts.shrink_to_fit();
-            screen.repo_counts.clear();
-            screen.repo_counts.shrink_to_fit();
+        if let App::Authenticated(boxed_screen, _) = self {
+            if let Screen::Notifications(screen) = &mut **boxed_screen {
+                screen.all_notifications.clear();
+                screen.all_notifications.shrink_to_fit();
+                screen.filtered_notifications.clear();
+                screen.filtered_notifications.shrink_to_fit();
+                screen.groups.clear();
+                screen.groups.shrink_to_fit();
+                screen.type_counts.clear();
+                screen.type_counts.shrink_to_fit();
+                screen.repo_counts.clear();
+                screen.repo_counts.shrink_to_fit();
+            }
         }
 
         // Aggressively trim memory
@@ -629,8 +649,10 @@ impl App {
     /// Get the minimize_to_tray setting from current state.
     fn get_minimize_to_tray_setting(&self) -> bool {
         match self {
-            App::Authenticated(Screen::Settings(screen), _) => screen.settings.minimize_to_tray,
-            App::Authenticated(_, ctx) => ctx.settings.minimize_to_tray,
+            App::Authenticated(boxed_screen, ctx) => match &**boxed_screen {
+                Screen::Settings(screen) => screen.settings.minimize_to_tray,
+                _ => ctx.settings.minimize_to_tray,
+            },
             _ => AppSettings::load().minimize_to_tray,
         }
     }
@@ -638,8 +660,10 @@ impl App {
     /// Get mutable reference to settings if available.
     fn get_settings_mut(&mut self) -> Option<&mut AppSettings> {
         match self {
-            App::Authenticated(Screen::Settings(screen), _) => Some(&mut screen.settings),
-            App::Authenticated(_, ctx) => Some(&mut ctx.settings),
+            App::Authenticated(boxed_screen, ctx) => match &mut **boxed_screen {
+                Screen::Settings(screen) => Some(&mut screen.settings),
+                _ => Some(&mut ctx.settings),
+            },
             _ => None,
         }
     }
@@ -653,16 +677,16 @@ impl App {
         match self {
             App::Loading => self.view_loading(),
             App::Login(screen) => screen.view().map(Message::Login),
-            App::Authenticated(screen, ctx) => match screen {
+            App::Authenticated(boxed_screen, ctx) => match &**boxed_screen {
                 Screen::Notifications(notif_screen) => {
                     let accounts = ctx.account_names();
 
                     if ctx.settings.power_mode {
-                        self.view_power_mode(notif_screen, &ctx.settings, &accounts)
+                        self.view_power_mode(notif_screen, &ctx.settings, accounts)
                     } else {
                         notif_screen
                             .view(
-                                &accounts,
+                                accounts,
                                 ctx.settings.icon_theme,
                                 ctx.settings.sidebar_width,
                                 false,
@@ -695,11 +719,16 @@ impl App {
         &self,
         screen: &'a NotificationsScreen,
         settings: &AppSettings,
-        accounts: &[String],
+        accounts: Vec<String>,
     ) -> Element<'a, Message> {
         use iced::widget::{column, row};
 
-        let content = screen.view(accounts, settings.icon_theme, settings.sidebar_width, true);
+        let content = screen.view(
+            accounts.clone(),
+            settings.icon_theme,
+            settings.sidebar_width,
+            true,
+        );
 
         let main_area: iced::Element<NotificationMessage> = if settings.show_details_panel {
             row![
@@ -748,7 +777,7 @@ impl App {
         match self {
             App::Loading => "GitTop".to_string(),
             App::Login(_) => "GitTop - Sign In".to_string(),
-            App::Authenticated(screen, _) => match screen {
+            App::Authenticated(boxed_screen, _) => match &**boxed_screen {
                 Screen::Notifications(notif_screen) => {
                     let unread = notif_screen
                         .all_notifications
@@ -791,22 +820,26 @@ impl App {
         });
 
         match self {
-            App::Authenticated(Screen::Notifications(_), _) => {
-                if is_hidden {
-                    // When hidden, still refresh but less frequently (every 2 minutes)
-                    // This allows desktop notifications to fire for new items
-                    Subscription::batch([
-                        time::every(Duration::from_secs(60)).map(|_| Message::Tick),
-                        tray_sub,
-                        window_sub,
-                    ])
+            App::Authenticated(boxed_screen, _) => {
+                if let Screen::Notifications(_) = &**boxed_screen {
+                    if is_hidden {
+                        // When hidden, still refresh but less frequently (every 2 minutes)
+                        // This allows desktop notifications to fire for new items
+                        Subscription::batch([
+                            time::every(Duration::from_secs(60)).map(|_| Message::Tick),
+                            tray_sub,
+                            window_sub,
+                        ])
+                    } else {
+                        // Refresh every 60 seconds + tray events + window events
+                        Subscription::batch([
+                            time::every(Duration::from_secs(60)).map(|_| Message::Tick),
+                            tray_sub,
+                            window_sub,
+                        ])
+                    }
                 } else {
-                    // Refresh every 60 seconds + tray events + window events
-                    Subscription::batch([
-                        time::every(Duration::from_secs(60)).map(|_| Message::Tick),
-                        tray_sub,
-                        window_sub,
-                    ])
+                    Subscription::batch([tray_sub, window_sub])
                 }
             }
             _ => Subscription::batch([tray_sub, window_sub]),

@@ -98,11 +98,7 @@ pub fn view_overview_tab(
             } else {
                 icons::icon_check(16.0, p.text_muted, icon_theme)
             },
-            if high_priority_count > 0 {
-                p.text_primary
-            } else {
-                p.text_primary
-            }
+            p.text_primary
         ),
     ]
     .align_y(iced::Alignment::Center);

@@ -9,42 +9,38 @@ use crate::settings::IconTheme;
 use crate::ui::{icons, theme};
 
 /// Render the sidebar.
-pub fn view_sidebar<'a>(
-    user: &'a UserInfo,
-    accounts: &[String],
-    type_counts: &[(SubjectType, usize)],
-    repo_counts: &[(String, usize)],
-    selected_type: Option<SubjectType>,
-    selected_repo: Option<&str>,
-    total_count: usize,
-    icon_theme: IconTheme,
-    width: f32,
-    power_mode: bool,
-) -> Element<'a, NotificationMessage> {
+use super::sidebar_state::SidebarState;
+
+/// Render the sidebar.
+pub fn view_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMessage> {
     // Scrollable content (branding, types, repos)
     let mut scrollable_content = column![];
 
     // Only show branding in sidebar if NOT in power mode (it's in top bar otherwise)
-    if !power_mode {
+    if !state.power_mode {
         scrollable_content = scrollable_content
-            .push(view_branding(icon_theme))
+            .push(view_branding(state.icon_theme))
             .push(Space::new().height(16));
     }
 
     let scrollable_content = scrollable_content
         .push(view_types_section(
-            type_counts,
-            selected_type,
-            total_count,
-            icon_theme,
+            state.type_counts,
+            state.selected_type,
+            state.total_count,
+            state.icon_theme,
         ))
         .push(Space::new().height(16))
-        .push(view_repos_section(repo_counts, selected_repo, icon_theme))
+        .push(view_repos_section(
+            state.repo_counts,
+            state.selected_repo,
+            state.icon_theme,
+        ))
         .spacing(0)
         .padding([16, 12]);
 
     // Main layout: scrollable area + user section pinned at bottom
-    let content: Element<'a, NotificationMessage> = if power_mode {
+    let content: Element<'a, NotificationMessage> = if state.power_mode {
         // In power mode, user info is in top bar, so just show scrollable content
         // We still wrap in clear container for consistent background if needed
         container(
@@ -61,7 +57,12 @@ pub fn view_sidebar<'a>(
                 .height(Fill)
                 .style(theme::scrollbar),
             // User section pinned at the bottom
-            container(view_user_section(user, accounts, icon_theme)).padding(Padding {
+            container(view_user_section(
+                state.user,
+                &state.accounts,
+                state.icon_theme,
+            ))
+            .padding(Padding {
                 top: 0.0,
                 right: 12.0,
                 bottom: 16.0,
@@ -73,7 +74,7 @@ pub fn view_sidebar<'a>(
     };
 
     container(content)
-        .width(Length::Fixed(width.clamp(180.0, 400.0)))
+        .width(Length::Fixed(state.width.clamp(180.0, 400.0)))
         .height(Fill)
         .style(theme::sidebar)
         .into()

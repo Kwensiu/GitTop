@@ -3,7 +3,8 @@
 mod group;
 pub mod helper;
 mod screen;
-mod sidebar;
+pub mod sidebar;
+pub mod sidebar_state;
 mod states;
 
 pub use screen::{NotificationMessage, NotificationsScreen};

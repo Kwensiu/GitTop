@@ -160,7 +160,7 @@ pub fn view_explain_panel(
             matches.iter().find(|m| m.enabled).cloned()
         };
 
-        for (_, matched) in matches.iter().enumerate() {
+        for matched in matches.iter() {
             let is_winner = winner.as_ref().map(|w| w.id == matched.id).unwrap_or(false);
 
             let action_color = match matched.action {

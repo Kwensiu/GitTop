@@ -531,27 +531,27 @@ impl NotificationsScreen {
         }
     }
 
-    pub fn view(
-        &self,
-        accounts: &[String],
+    pub fn view<'a>(
+        &'a self,
+        accounts: Vec<String>,
         icon_theme: IconTheme,
         sidebar_width: f32,
         power_mode: bool,
-    ) -> Element<'_, NotificationMessage> {
+    ) -> Element<'a, NotificationMessage> {
         row![
             // Sidebar
-            view_sidebar(
-                &self.user,
+            view_sidebar(super::sidebar_state::SidebarState {
+                user: &self.user,
                 accounts,
-                &self.type_counts,
-                &self.repo_counts,
-                self.filters.selected_type,
-                self.filters.selected_repo.as_deref(),
-                self.all_notifications.len(),
+                type_counts: &self.type_counts,
+                repo_counts: &self.repo_counts,
+                selected_type: self.filters.selected_type,
+                selected_repo: self.filters.selected_repo.as_deref(),
+                total_count: self.all_notifications.len(),
                 icon_theme,
-                sidebar_width,
+                width: sidebar_width,
                 power_mode,
-            ),
+            }),
             // Main content area
             self.view_main_content(icon_theme, power_mode)
         ]

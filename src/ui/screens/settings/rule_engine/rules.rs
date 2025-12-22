@@ -480,7 +480,7 @@ impl RuleEngine {
                             PRIORITY_DEFAULT,
                             RuleAction::Hide, // Disabled account = Suppress
                             rule.id.clone(),
-                            RuleDecisionReason::AccountRule(format!("{} (Disabled)", rule.account)),
+                            RuleDecisionReason::Account(format!("{} (Disabled)", rule.account)),
                         ));
                         continue;
                     }
@@ -492,7 +492,7 @@ impl RuleEngine {
                             PRIORITY_DEFAULT,
                             RuleAction::Show,
                             rule.id.clone(),
-                            RuleDecisionReason::AccountRule(rule.account.clone()),
+                            RuleDecisionReason::Account(rule.account.clone()),
                         ));
                     } else {
                         // Account is inactive (outside schedule). Apply configured behavior.
@@ -504,7 +504,7 @@ impl RuleEngine {
                             PRIORITY_DEFAULT,
                             action,
                             rule.id.clone(),
-                            RuleDecisionReason::AccountRule(rule.account.clone()),
+                            RuleDecisionReason::Account(rule.account.clone()),
                         ));
                     }
                 }
@@ -519,7 +519,7 @@ impl RuleEngine {
                         rule.priority,
                         rule.action,
                         rule.id.clone(),
-                        RuleDecisionReason::OrgRule(rule.org.clone()),
+                        RuleDecisionReason::Org(rule.org.clone()),
                     ));
                 }
             }
@@ -543,7 +543,7 @@ impl RuleEngine {
                         rule.priority,
                         rule.action,
                         rule.id.clone(),
-                        RuleDecisionReason::TypeRule(rule.notification_type.clone()),
+                        RuleDecisionReason::Type(rule.notification_type.clone()),
                     ));
                 }
             }
@@ -634,9 +634,9 @@ pub struct RuleDecision {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuleDecisionReason {
-    AccountRule(String),
-    OrgRule(String),
-    TypeRule(String),
+    Account(String),
+    Org(String),
+    Type(String),
 }
 
 #[cfg(test)]
@@ -652,8 +652,10 @@ mod tests {
 
     #[test]
     fn test_active_schedule_logic() {
-        let mut rules = NotificationRuleSet::default();
-        rules.enabled = true;
+        let mut rules = NotificationRuleSet {
+            enabled: true,
+            ..Default::default()
+        };
 
         let mut acc_rule = AccountRule::new("Amar");
         acc_rule.enabled = true;
@@ -666,8 +668,10 @@ mod tests {
     #[test]
     fn test_priority_action_override() {
         // High priority rule (Org) vs Schedule suppression
-        let mut rules = NotificationRuleSet::default();
-        rules.enabled = true;
+        let mut rules = NotificationRuleSet {
+            enabled: true,
+            ..Default::default()
+        };
 
         let mut acc_rule = AccountRule::new("WorkAcc");
         acc_rule.enabled = true;

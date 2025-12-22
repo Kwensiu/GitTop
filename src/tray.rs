@@ -110,20 +110,18 @@ impl TrayManager {
         }
 
         // Check for tray icon click events
-        if let Ok(event) = TrayIconEvent::receiver().try_recv() {
-            match event {
-                TrayIconEvent::Click {
-                    button: tray_icon::MouseButton::Left,
-                    ..
-                }
-                | TrayIconEvent::DoubleClick {
-                    button: tray_icon::MouseButton::Left,
-                    ..
-                } => {
-                    return Some(TrayCommand::ShowWindow);
-                }
-                _ => {}
+        if let Ok(
+            TrayIconEvent::Click {
+                button: tray_icon::MouseButton::Left,
+                ..
             }
+            | TrayIconEvent::DoubleClick {
+                button: tray_icon::MouseButton::Left,
+                ..
+            },
+        ) = TrayIconEvent::receiver().try_recv()
+        {
+            return Some(TrayCommand::ShowWindow);
         }
 
         None

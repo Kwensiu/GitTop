@@ -13,6 +13,14 @@ use crate::ui::theme;
 use super::super::components::{view_empty_state, view_type_rule_card};
 use super::super::messages::RuleEngineMessage;
 
+/// State for the "New Rule" form.
+pub struct TypeRuleFormState<'a> {
+    pub notification_type: crate::github::types::NotificationReason,
+    pub account: &'a str,
+    pub priority: i32,
+    pub action: RuleAction,
+}
+
 /// Groups type rules by notification_type and returns them in a sorted order.
 fn group_type_rules(rules: &[TypeRule]) -> Vec<(String, Vec<&TypeRule>)> {
     let mut groups: HashMap<String, Vec<&TypeRule>> = HashMap::new();
@@ -33,11 +41,8 @@ fn group_type_rules(rules: &[TypeRule]) -> Vec<(String, Vec<&TypeRule>)> {
 pub fn view_type_rules_tab(
     rules: &NotificationRuleSet,
     icon_theme: IconTheme,
-    new_type: crate::github::types::NotificationReason,
-    new_account: &str,
+    form_state: TypeRuleFormState<'_>,
     available_accounts: &[String],
-    new_priority: i32,
-    new_action: RuleAction,
     expanded_groups: &HashSet<String>,
 ) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
@@ -50,7 +55,7 @@ pub fn view_type_rules_tab(
             text("Type").size(12).color(p.text_secondary),
             pick_list(
                 crate::github::types::NotificationReason::ALL,
-                Some(new_type),
+                Some(form_state.notification_type),
                 RuleEngineMessage::NewTypeRuleTypeChanged
             )
             .width(Length::Fixed(180.0))
@@ -69,7 +74,7 @@ pub fn view_type_rules_tab(
                     options.extend_from_slice(available_accounts);
                     options
                 },
-                Some(new_account.to_string()),
+                Some(form_state.account.to_string()),
                 RuleEngineMessage::NewTypeRuleAccountChanged
             )
             .width(Length::Fixed(150.0))
@@ -80,7 +85,7 @@ pub fn view_type_rules_tab(
     );
 
     // Priority Input with Warning
-    let priority_label_row = if new_priority > 100 || new_priority < -100 {
+    let priority_label_row = if !(-100..=100).contains(&form_state.priority) {
         row![
             text("Priority").size(12).color(p.text_secondary),
             Space::new().width(4),
@@ -96,14 +101,14 @@ pub fn view_type_rules_tab(
     let priority_input = container(
         column![
             priority_label_row,
-            text_input("0", &new_priority.to_string())
+            text_input("0", &form_state.priority.to_string())
                 .on_input(move |s| {
                     if let Ok(val) = s.parse::<i32>() {
                         RuleEngineMessage::NewTypeRulePriorityChanged(val)
                     } else if s.is_empty() || s == "-" {
                         RuleEngineMessage::NewTypeRulePriorityChanged(0)
                     } else {
-                        RuleEngineMessage::NewTypeRulePriorityChanged(new_priority)
+                        RuleEngineMessage::NewTypeRulePriorityChanged(form_state.priority)
                     }
                 })
                 .width(Length::Fixed(80.0))
@@ -113,7 +118,7 @@ pub fn view_type_rules_tab(
     );
 
     // Action Input with Warning
-    let action_label_row = if new_action == RuleAction::Hide {
+    let action_label_row = if form_state.action == RuleAction::Hide {
         row![
             text("Action").size(12).color(p.text_secondary),
             Space::new().width(4),
@@ -129,7 +134,7 @@ pub fn view_type_rules_tab(
             action_label_row,
             pick_list(
                 RuleAction::ALL,
-                Some(new_action),
+                Some(form_state.action),
                 RuleEngineMessage::NewTypeRuleActionChanged
             )
             .width(Length::Fixed(100.0))
@@ -215,7 +220,7 @@ pub fn view_type_rules_tab(
 
             let group_name_clone = group_name.clone();
             let group_header_btn = button(group_header_row)
-                .style(move |theme, status| (theme::ghost_button)(theme, status))
+                .style(theme::ghost_button)
                 .on_press(RuleEngineMessage::ToggleTypeGroup(group_name_clone))
                 .width(Fill);
 

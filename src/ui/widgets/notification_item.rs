@@ -72,7 +72,7 @@ pub fn notification_item(
     let padding_y = if dense { 8.0 } else { 14.0 };
     let padding_x = if dense { 12.0 } else { 16.0 };
     let content_spacing = if dense { 2.0 } else { 6.0 };
-    let row_spacing = if dense { 8.0 } else { 8.0 };
+    let row_spacing = 8.0;
 
     // Title row
     // In dense mode, title is slightly smaller or just cleaner
