@@ -41,7 +41,7 @@ pub fn view_schedule_rules_tab(
         content = content.push(view_empty_state("No schedule rules configured", icon_theme));
     } else {
         for rule in &rules.schedule_rules {
-            content = content.push(view_schedule_rule_card(rule));
+            content = content.push(view_schedule_rule_card(rule, icon_theme));
             content = content.push(Space::new().height(8));
         }
     }

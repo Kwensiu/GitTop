@@ -1,7 +1,7 @@
 //! Top Bar widget - Global context and command center.
 
 use iced::widget::{button, container, row, text, Space};
-use iced::{Alignment, Element, Fill, Length};
+use iced::{Alignment, Element, Fill};
 
 use crate::github::UserInfo;
 use crate::settings::IconTheme;
@@ -12,7 +12,6 @@ use crate::ui::{icons, theme};
 #[derive(Debug, Clone)]
 pub struct AccountInfo {
     pub username: String,
-    pub is_primary: bool,
 }
 
 pub fn view_top_bar<'a>(
@@ -38,6 +37,7 @@ pub fn view_top_bar<'a>(
         .text_size(13)
         .padding([4, 8])
         .style(theme::pick_list_style)
+        .menu_style(theme::menu_style)
         .into()
     } else {
         // No switcher if only one account, just show text in profile area
@@ -95,82 +95,19 @@ pub fn view_top_bar<'a>(
 
     // 2. Filter Toggle (Unread | All)
     let is_unread_filter = !show_all_filters;
-    let unread_btn = button(text("Unread").size(12).color(if is_unread_filter {
-        p.text_primary
-    } else {
-        p.text_secondary
-    }))
-    .style(move |_theme, status| {
-        let base_bg = if is_unread_filter {
-            p.bg_active
-        } else {
-            iced::Color::TRANSPARENT
-        };
-        let bg = match status {
-            button::Status::Hovered if !is_unread_filter => p.bg_hover,
-            button::Status::Pressed => p.bg_active,
-            _ => base_bg,
-        };
-        button::Style {
-            background: Some(iced::Background::Color(bg)),
-            text_color: if is_unread_filter {
-                p.text_primary
-            } else {
-                p.text_secondary
-            },
-            border: iced::Border {
-                radius: 0.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    })
-    .padding([4, 10])
-    .on_press(NotificationMessage::ToggleShowAll);
 
-    let all_btn = button(text("All").size(12).color(if !is_unread_filter {
-        p.text_primary
-    } else {
-        p.text_secondary
-    }))
-    .style(move |_theme, status| {
-        let base_bg = if !is_unread_filter {
-            p.bg_active
-        } else {
-            iced::Color::TRANSPARENT
-        };
-        let bg = match status {
-            button::Status::Hovered if is_unread_filter => p.bg_hover,
-            button::Status::Pressed => p.bg_active,
-            _ => base_bg,
-        };
-        button::Style {
-            background: Some(iced::Background::Color(bg)),
-            text_color: if !is_unread_filter {
-                p.text_primary
-            } else {
-                p.text_secondary
-            },
-            border: iced::Border {
-                radius: 0.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    })
-    .padding([4, 10])
-    .on_press(NotificationMessage::ToggleShowAll);
+    let unread_btn = button(text("Unread").size(12))
+        .style(theme::segment_button(is_unread_filter))
+        .padding([4, 10])
+        .on_press(NotificationMessage::ToggleShowAll);
+
+    let all_btn = button(text("All").size(12))
+        .style(theme::segment_button(!is_unread_filter))
+        .padding([4, 10])
+        .on_press(NotificationMessage::ToggleShowAll);
 
     let filter_segment =
-        container(row![unread_btn, all_btn].spacing(0)).style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 4.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            ..Default::default()
-        });
+        container(row![unread_btn, all_btn].spacing(0)).style(theme::segment_container);
 
     // 3. Mark All Read
     let mark_read: Element<'_, NotificationMessage> = if unread_count > 0 {

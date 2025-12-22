@@ -38,8 +38,6 @@ pub enum SettingsMessage {
     TogglePowerMode(bool),
     /// Open the Rule Engine configuration window.
     OpenRuleEngine,
-    /// Add a new account (starts OAuth flow or shows token input).
-    AddAccount,
     /// Token input changed.
     TokenInputChanged(String),
     /// Submit token for validation.

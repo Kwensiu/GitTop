@@ -4,6 +4,7 @@ use iced::widget::{column, container, text, Space};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
+use crate::ui::icons;
 use crate::ui::screens::settings::rule_engine::rules::NotificationRuleSet;
 use crate::ui::theme;
 
@@ -35,7 +36,9 @@ pub fn view_type_rules_tab(
                 Some(new_type),
                 RuleEngineMessage::NewTypeRuleTypeChanged
             )
-            .width(Length::Fixed(180.0)),
+            .width(Length::Fixed(180.0))
+            .style(theme::pick_list_style)
+            .menu_style(theme::menu_style),
         ]
         .spacing(4),
     );
@@ -52,14 +55,30 @@ pub fn view_type_rules_tab(
                 Some(new_account.to_string()),
                 RuleEngineMessage::NewTypeRuleAccountChanged
             )
-            .width(Length::Fixed(150.0)),
+            .width(Length::Fixed(150.0))
+            .style(theme::pick_list_style)
+            .menu_style(theme::menu_style),
         ]
         .spacing(4),
     );
 
+    // Priority Input with Warning
+    let priority_label_row = if new_priority > 100 || new_priority < -100 {
+        row![
+            text("Priority").size(12).color(p.text_secondary),
+            Space::new().width(4),
+            icons::icon_alert(12.0, p.accent_warning, icon_theme),
+            Space::new().width(4),
+            text("Non-std").size(10).color(p.accent_warning),
+        ]
+        .align_y(Alignment::Center)
+    } else {
+        row![text("Priority").size(12).color(p.text_secondary)]
+    };
+
     let priority_input = container(
         column![
-            text("Priority").size(12).color(p.text_secondary),
+            priority_label_row,
             text_input("0", &new_priority.to_string())
                 .on_input(move |s| {
                     if let Ok(val) = s.parse::<i32>() {
@@ -70,20 +89,35 @@ pub fn view_type_rules_tab(
                         RuleEngineMessage::NewTypeRulePriorityChanged(new_priority)
                     }
                 })
-                .width(Length::Fixed(80.0)),
+                .width(Length::Fixed(80.0))
+                .style(theme::text_input_style),
         ]
         .spacing(4),
     );
 
+    // Action Input with Warning
+    let action_label_row = if new_action == RuleAction::Hide {
+        row![
+            text("Action").size(12).color(p.text_secondary),
+            Space::new().width(4),
+            icons::icon_alert(12.0, p.accent_warning, icon_theme),
+        ]
+        .align_y(Alignment::Center)
+    } else {
+        row![text("Action").size(12).color(p.text_secondary)]
+    };
+
     let action_input = container(
         column![
-            text("Action").size(12).color(p.text_secondary),
+            action_label_row,
             pick_list(
                 RuleAction::ALL,
                 Some(new_action),
                 RuleEngineMessage::NewTypeRuleActionChanged
             )
-            .width(Length::Fixed(100.0)),
+            .width(Length::Fixed(100.0))
+            .style(theme::pick_list_style)
+            .menu_style(theme::menu_style),
         ]
         .spacing(4),
     );
@@ -134,7 +168,7 @@ pub fn view_type_rules_tab(
         content = content.push(view_empty_state("No type rules configured.", icon_theme));
     } else {
         for rule in &rules.type_rules {
-            content = content.push(view_type_rule_card(rule));
+            content = content.push(view_type_rule_card(rule, icon_theme));
             content = content.push(Space::new().height(8));
         }
     }

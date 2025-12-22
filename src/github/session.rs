@@ -18,9 +18,6 @@ pub enum SessionError {
     #[error("GitHub API error: {0}")]
     GitHub(#[from] GitHubError),
 
-    #[error("Token validation failed: {0}")]
-    ValidationFailed(String),
-
     #[error("Account not found: {0}")]
     AccountNotFound(String),
 }
@@ -46,70 +43,23 @@ impl SessionManager {
         Self::default()
     }
 
-    /// Validates a token and returns user info.
-    async fn validate_token(token: &str) -> Result<UserInfo, SessionError> {
-        // Basic format validation
-        if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
-            return Err(SessionError::ValidationFailed(
-                "Token must start with 'ghp_' or 'github_pat_'".to_string(),
-            ));
-        }
-
-        // Create a temporary client to validate
-        let client = GitHubClient::new(token)?;
-
-        // Fetch user info to validate the token
-        let user = client.get_authenticated_user().await?;
-
-        Ok(user)
-    }
-
-    /// Add a new account by validating and storing its token.
-    /// Returns the username of the added account.
-    pub async fn add_account(&mut self, token: &str) -> Result<String, SessionError> {
-        // Validate the token first
-        let user = Self::validate_token(token).await?;
-        let username = user.login.clone();
-
-        // Store in keyring
-        AccountKeyring::save_token(&username, token)?;
-
-        // Create client and session
-        let client = GitHubClient::new(token)?;
-        let session = Session {
-            username: username.clone(),
-            client,
-            user,
-        };
-
-        // If this is the first account, make it primary
-        if self.sessions.is_empty() {
-            self.primary = Some(username.clone());
-        }
-
-        self.sessions.insert(username.clone(), session);
-
-        Ok(username)
-    }
-
     /// Restore a session for a known username (loads token from keyring).
     pub async fn restore_account(&mut self, username: &str) -> Result<(), SessionError> {
         let token = AccountKeyring::load_token(username)?
             .ok_or_else(|| SessionError::AccountNotFound(username.to_string()))?;
 
-        // Validate the token
-        let user = match Self::validate_token(&token).await {
-            Ok(user) => user,
-            Err(SessionError::GitHub(GitHubError::Unauthorized)) => {
+        // Validate the token using GitHubClient
+        let (client, user) = match GitHubClient::validate_token(&token).await {
+            Ok((client, user)) => (client, user),
+            Err(GitHubError::Unauthorized) => {
                 // Token expired, clean up
                 let _ = AccountKeyring::delete_token(username);
                 return Err(SessionError::AccountNotFound(username.to_string()));
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(SessionError::GitHub(e)),
         };
 
-        // Create client and session
-        let client = GitHubClient::new(&token)?;
+        // Create session
         let session = Session {
             username: username.to_string(),
             client,
@@ -137,6 +87,16 @@ impl SessionManager {
         }
 
         Ok(())
+    }
+
+    /// Add a session manually (e.g. after restoration).
+    pub fn add_session(&mut self, session: Session) {
+        let username = session.username.clone();
+        // If this is the first account, make it primary
+        if self.sessions.is_empty() {
+            self.primary = Some(username.clone());
+        }
+        self.sessions.insert(username, session);
     }
 
     /// Get the primary session.
@@ -173,11 +133,6 @@ impl SessionManager {
     #[allow(dead_code)]
     pub fn get(&self, username: &str) -> Option<&Session> {
         self.sessions.get(username)
-    }
-
-    /// Check if any sessions exist.
-    pub fn is_empty(&self) -> bool {
-        self.sessions.is_empty()
     }
 
     /// Number of active sessions.

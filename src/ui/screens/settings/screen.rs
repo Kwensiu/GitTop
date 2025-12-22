@@ -99,12 +99,6 @@ impl SettingsScreen {
                 // Handled by parent (app.rs)
                 Task::none()
             }
-            SettingsMessage::AddAccount => {
-                // Clear messages and show input
-                self.accounts_state.error_message = None;
-                self.accounts_state.success_message = None;
-                Task::none()
-            }
             SettingsMessage::TokenInputChanged(token) => {
                 self.accounts_state.token_input = token;
                 self.accounts_state.error_message = None;

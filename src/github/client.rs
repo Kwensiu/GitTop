@@ -107,6 +107,22 @@ impl GitHubClient {
         }
     }
 
+    /// Validates a token by creating a client and fetching user info.
+    /// Returns the client and user info if valid.
+    pub async fn validate_token(token: &str) -> Result<(Self, UserInfo), GitHubError> {
+        // Basic format validation
+        if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
+            return Err(GitHubError::Api {
+                status: 400,
+                message: "Token must start with 'ghp_' or 'github_pat_'".to_string(),
+            });
+        }
+
+        let client = Self::new(token)?;
+        let user = client.get_authenticated_user().await?;
+        Ok((client, user))
+    }
+
     /// Fetches the user's notifications.
     pub async fn get_notifications(&self, all: bool) -> Result<Vec<Notification>, GitHubError> {
         let url = format!(

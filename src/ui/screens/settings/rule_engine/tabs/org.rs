@@ -32,7 +32,7 @@ pub fn view_org_rules_tab(
         ));
     } else {
         for rule in &rules.org_rules {
-            content = content.push(view_org_rule_card(rule));
+            content = content.push(view_org_rule_card(rule, icon_theme));
             content = content.push(Space::new().height(8));
         }
     }

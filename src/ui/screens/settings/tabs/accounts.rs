@@ -6,7 +6,7 @@ use iced::{Alignment, Element, Fill};
 use crate::settings::{AppSettings, StoredAccount};
 use crate::ui::{icons, theme};
 
-use super::super::components::setting_card;
+use super::super::components::{setting_card, tab_title};
 use super::super::messages::SettingsMessage;
 
 /// State for the accounts tab (token input, validation status).
@@ -41,13 +41,6 @@ pub fn view<'a>(
     .into()
 }
 
-fn tab_title(title: &'static str) -> Element<'static, SettingsMessage> {
-    text(title)
-        .size(20)
-        .color(theme::palette().text_primary)
-        .into()
-}
-
 fn view_add_account_section<'a>(
     settings: &'a AppSettings,
     state: &'a AccountsTabState,
@@ -72,7 +65,8 @@ fn view_add_account_section<'a>(
                 .on_input(SettingsMessage::TokenInputChanged)
                 .padding([8, 12])
                 .size(13)
-                .width(Fill),
+                .width(Fill)
+                .style(theme::text_input_style),
             Space::new().width(8),
             button(if state.is_validating {
                 text("Validating...").size(13).color(iced::Color::WHITE)

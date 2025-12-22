@@ -61,6 +61,20 @@ fn emoji_icon(emoji: &'static str, size: u32, color: Color) -> Text<'static> {
     text(emoji).size(size).color(color)
 }
 
+/// Helper to switch between SVG and Emoji based on theme
+fn themed_icon<M: 'static>(
+    theme: IconTheme,
+    svg_data: &'static IconData,
+    emoji: &'static str,
+    size: f32,
+    color: Color,
+) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(svg_data, size, color).into(),
+        IconTheme::Emoji => emoji_icon(emoji, size as u32, color).into(),
+    }
+}
+
 // =============================================================================
 // THEME-AWARE ICON FUNCTIONS
 // These return Element<M> so they can be either SVG or Text based on theme.
@@ -68,74 +82,47 @@ fn emoji_icon(emoji: &'static str, size: u32, color: Color) -> Text<'static> {
 
 /// App branding icon (diamond).
 pub fn icon_brand<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuDiamond, size, color).into(),
-        IconTheme::Emoji => emoji_icon("◆", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuDiamond, "◆", size, color)
 }
 
 /// User/profile icon.
 pub fn icon_user<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuUser, size, color).into(),
-        IconTheme::Emoji => emoji_icon("👤", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuUser, "👤", size, color)
 }
 
 /// Power/logout icon.
 pub fn icon_power<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuPower, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⏻", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuPower, "⏻", size, color)
 }
 
 /// Refresh icon.
 pub fn icon_refresh<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuRefreshCw, size, color).into(),
-        IconTheme::Emoji => emoji_icon("↻", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuRefreshCw, "↻", size, color)
 }
 
 /// Check/success icon.
 pub fn icon_check<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCheck, size, color).into(),
-        IconTheme::Emoji => emoji_icon("✓", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCheck, "✓", size, color)
 }
 
 /// Alert/warning icon.
 pub fn icon_alert<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuTriangleAlert, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⚠", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuTriangleAlert, "⚠", size, color)
 }
 
 /// Inbox/all icon.
 pub fn icon_inbox<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuInbox, size, color).into(),
-        IconTheme::Emoji => emoji_icon("📋", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuInbox, "📋", size, color)
 }
 
 /// Folder/repository icon.
 pub fn icon_folder<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuFolder, size, color).into(),
-        IconTheme::Emoji => emoji_icon("📁", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuFolder, "📁", size, color)
 }
 
 /// Issue icon (circle dot).
 pub fn icon_issue<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCircleDot, size, color).into(),
-        IconTheme::Emoji => emoji_icon("●", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCircleDot, "●", size, color)
 }
 
 /// Pull request icon.
@@ -144,18 +131,12 @@ pub fn icon_pull_request<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuGitPullRequest, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⇄", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuGitPullRequest, "⇄", size, color)
 }
 
 /// Release/tag icon.
 pub fn icon_release<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuTag, size, color).into(),
-        IconTheme::Emoji => emoji_icon("◆", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuTag, "◆", size, color)
 }
 
 /// Discussion icon.
@@ -164,10 +145,7 @@ pub fn icon_discussion<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuMessageCircle, size, color).into(),
-        IconTheme::Emoji => emoji_icon("💬", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuMessageCircle, "💬", size, color)
 }
 
 /// CI/workflow check icon.
@@ -176,34 +154,22 @@ pub fn icon_check_suite<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCircleCheck, size, color).into(),
-        IconTheme::Emoji => emoji_icon("✓", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCircleCheck, "✓", size, color)
 }
 
 /// Commit icon.
 pub fn icon_commit<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuGitCommitHorizontal, size, color).into(),
-        IconTheme::Emoji => emoji_icon("◉", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuGitCommitHorizontal, "◉", size, color)
 }
 
 /// Security/vulnerability icon.
 pub fn icon_security<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuShieldAlert, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⚠", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuShieldAlert, "⚠", size, color)
 }
 
 /// Unknown/generic icon.
 pub fn icon_unknown<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCircle, size, color).into(),
-        IconTheme::Emoji => emoji_icon("○", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCircle, "○", size, color)
 }
 
 /// Circle check/success icon with fill.
@@ -212,18 +178,12 @@ pub fn icon_circle_check<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCircleCheck, size, color).into(),
-        IconTheme::Emoji => emoji_icon("✓", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCircleCheck, "✓", size, color)
 }
 
 /// Settings gear icon.
 pub fn icon_settings<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuSettings, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⚙", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuSettings, "⚙", size, color)
 }
 
 /// Chevron down icon.
@@ -232,10 +192,7 @@ pub fn icon_chevron_down<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuChevronDown, size, color).into(),
-        IconTheme::Emoji => emoji_icon("▼", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuChevronDown, "▼", size, color)
 }
 
 /// Chevron right icon.
@@ -244,10 +201,7 @@ pub fn icon_chevron_right<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuChevronRight, size, color).into(),
-        IconTheme::Emoji => emoji_icon("▶", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuChevronRight, "▶", size, color)
 }
 
 /// Chevron left icon.
@@ -256,26 +210,17 @@ pub fn icon_chevron_left<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuChevronLeft, size, color).into(),
-        IconTheme::Emoji => emoji_icon("◀", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuChevronLeft, "◀", size, color)
 }
 
 /// Trash icon.
 pub fn icon_trash<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuTrash2, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🗑", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuTrash2, "🗑", size, color)
 }
 
 /// Palette/appearance icon.
 pub fn icon_palette<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuPalette, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🎨", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuPalette, "🎨", size, color)
 }
 
 /// Bell/notification icon.
@@ -284,18 +229,12 @@ pub fn icon_notification<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuBell, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🔔", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuBell, "🔔", size, color)
 }
 
 /// Filter icon.
 pub fn icon_filter<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuSlidersHorizontal, size, color).into(),
-        IconTheme::Emoji => emoji_icon("⚙", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuSlidersHorizontal, "⚙", size, color)
 }
 
 /// External link icon.
@@ -304,50 +243,32 @@ pub fn icon_external_link<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuExternalLink, size, color).into(),
-        IconTheme::Emoji => emoji_icon("↗", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuExternalLink, "↗", size, color)
 }
 
 /// Clock icon.
 pub fn icon_clock<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuClock, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🕐", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuClock, "🕐", size, color)
 }
 
 /// Calendar icon.
 pub fn icon_calendar<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuCalendar, size, color).into(),
-        IconTheme::Emoji => emoji_icon("📅", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuCalendar, "📅", size, color)
 }
 
 /// Building icon.
 pub fn icon_building<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuBuilding, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🏢", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuBuilding, "🏢", size, color)
 }
 
 /// Tag icon.
 pub fn icon_tag<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuTag, size, color).into(),
-        IconTheme::Emoji => emoji_icon("🏷", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuTag, "🏷", size, color)
 }
 
 /// Chart/dashboard icon.
 pub fn icon_chart<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuLayoutDashboard, size, color).into(),
-        IconTheme::Emoji => emoji_icon("📊", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuLayoutDashboard, "📊", size, color)
 }
 
 /// Inbox empty icon.
@@ -356,16 +277,10 @@ pub fn icon_inbox_empty<M: 'static>(
     color: Color,
     theme: IconTheme,
 ) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuArchive, size, color).into(),
-        IconTheme::Emoji => emoji_icon("📭", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuArchive, "📭", size, color)
 }
 
 /// Plus/add icon.
 pub fn icon_plus<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
-    match theme {
-        IconTheme::Svg => icon_colored(&icondata_lu::LuPlus, size, color).into(),
-        IconTheme::Emoji => emoji_icon("+", size as u32, color).into(),
-    }
+    themed_icon(theme, &icondata_lu::LuPlus, "+", size, color)
 }

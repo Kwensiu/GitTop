@@ -329,37 +329,41 @@ impl RuleEngineScreen {
     fn view_sidebar(&self) -> Element<'_, RuleEngineMessage> {
         let p = theme::palette();
         let t = self.icon_theme;
+        let scale = self.sidebar_font_scale;
+
+        // Base sizes
+        let icon_size = 14.0 * scale;
 
         let nav_items = column![
             self.view_nav_item(
                 "Overview",
                 RuleTab::Overview,
-                icons::icon_chart(14.0, self.nav_icon_color(RuleTab::Overview), t)
+                icons::icon_chart(icon_size, self.nav_icon_color(RuleTab::Overview), t)
             ),
             self.view_nav_item(
                 "Time Rules",
                 RuleTab::TimeRules,
-                icons::icon_clock(14.0, self.nav_icon_color(RuleTab::TimeRules), t)
+                icons::icon_clock(icon_size, self.nav_icon_color(RuleTab::TimeRules), t)
             ),
             self.view_nav_item(
                 "Schedule",
                 RuleTab::ScheduleRules,
-                icons::icon_calendar(14.0, self.nav_icon_color(RuleTab::ScheduleRules), t)
+                icons::icon_calendar(icon_size, self.nav_icon_color(RuleTab::ScheduleRules), t)
             ),
             self.view_nav_item(
                 "Accounts",
                 RuleTab::AccountRules,
-                icons::icon_user(14.0, self.nav_icon_color(RuleTab::AccountRules), t)
+                icons::icon_user(icon_size, self.nav_icon_color(RuleTab::AccountRules), t)
             ),
             self.view_nav_item(
                 "Organizations",
                 RuleTab::OrgRules,
-                icons::icon_building(14.0, self.nav_icon_color(RuleTab::OrgRules), t)
+                icons::icon_building(icon_size, self.nav_icon_color(RuleTab::OrgRules), t)
             ),
             self.view_nav_item(
                 "Types",
                 RuleTab::TypeRules,
-                icons::icon_tag(14.0, self.nav_icon_color(RuleTab::TypeRules), t)
+                icons::icon_tag(icon_size, self.nav_icon_color(RuleTab::TypeRules), t)
             ),
         ]
         .spacing(4)
@@ -397,6 +401,8 @@ impl RuleEngineScreen {
     ) -> Element<'static, RuleEngineMessage> {
         let p = theme::palette();
         let is_selected = self.selected_tab == tab;
+        let scale = self.sidebar_font_scale;
+        let text_size = 13.0 * scale;
 
         let text_color = if is_selected {
             p.accent
@@ -406,8 +412,8 @@ impl RuleEngineScreen {
 
         let content = row![
             icon,
-            Space::new().width(8),
-            text(label).size(13).color(text_color),
+            Space::new().width(8.0 * scale), // Scale spacing too? Maybe not explicitly requested but looks better.
+            text(label).size(text_size).color(text_color),
         ]
         .align_y(Alignment::Center)
         .padding([8, 10]);

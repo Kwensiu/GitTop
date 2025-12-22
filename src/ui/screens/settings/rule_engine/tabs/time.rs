@@ -43,7 +43,7 @@ pub fn view_time_rules_tab(
         content = content.push(view_empty_state("No time rules configured", icon_theme));
     } else {
         for rule in &rules.time_rules {
-            content = content.push(view_time_rule_card(rule));
+            content = content.push(view_time_rule_card(rule, icon_theme));
             content = content.push(Space::new().height(8));
         }
     }

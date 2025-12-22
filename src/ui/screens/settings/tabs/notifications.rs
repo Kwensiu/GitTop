@@ -5,6 +5,7 @@ use iced::{Alignment, Element, Fill};
 
 use crate::ui::theme;
 
+use super::super::components::tab_title;
 use super::super::messages::SettingsMessage;
 
 /// Render the notifications tab content.
@@ -42,11 +43,4 @@ pub fn view() -> Element<'static, SettingsMessage> {
     .padding(24)
     .width(Fill)
     .into()
-}
-
-fn tab_title(title: &'static str) -> Element<'static, SettingsMessage> {
-    text(title)
-        .size(20)
-        .color(theme::palette().text_primary)
-        .into()
 }

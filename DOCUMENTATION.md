@@ -14,7 +14,7 @@ The **Command Center** is a dedicated settings page that serves as the control h
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Settings Screen                          │
+│                         Settings Screen                         │
 ├─────────────┬─────────────┬─────────────┬────────────┬──────────┤
 │ Appearance  │  Behavior   │   Command   │ Notific.   │ Accounts │
 │             │             │   Center    │            │          │
@@ -140,6 +140,27 @@ pub struct TypeRule {
 }
 ```
 
+#### RuleDecision
+
+Trace of why a specific rule was applied, used for observability:
+
+```rust
+pub struct RuleDecision {
+    pub applied_rule_id: String,
+    pub action: RuleAction,
+    pub priority: i32,
+    pub reason: RuleDecisionReason,
+}
+
+pub enum RuleDecisionReason {
+    TimeRule(String),
+    ScheduleRule(String),
+    AccountRule(String),
+    OrgRule(String),
+    TypeRule(String),
+}
+```
+
 #### RuleAction
 
 Actions determine how a notification is presented to the user.
@@ -152,10 +173,10 @@ pub enum RuleAction {
     /// **Silent**: The notification appears in the list but **does not** trigger a desktop notification or sound. Use this for low-priority items you want to see eventually but don't need immediate interruption for.
     Silent,
 
-    /// **Hide**: The notification is completely hidden from the list. It is effectively "auto-archived" or suppressed from the user's view in GitTop.
-    Hide,
+    /// **Suppress**: The notification is completely hidden from the list. It is effectively "auto-archived" or suppressed from the user's view in GitTop.
+    Suppress,
 
-    /// **Priority**: The notification is prominently highlighted (e.g., distinct color/icon) and always triggers a desktop notification, overriding any "Silent" or "Hide" rules that might otherwise apply.
+    /// **Priority**: The notification is prominently highlighted (e.g., distinct color/icon) and always triggers a desktop notification, overriding any "Silent" or "Suppress" rules that might otherwise apply.
     Priority,
 }
 ```
@@ -167,11 +188,16 @@ Rules can be assigned an integer `priority` value to resolve conflicts when mult
 - **Range**: Signed 32-bit integer (`i32`).
 - **Logic**: Higher values take precedence.
 - **Evaluation Order**:
-    1.  **Highest Logic**: `Priority` action always wins if any matching rule has it.
-    2.  **Highest Integer**: Among other rules, the one with the highest `priority` value wins.
-    3.  **Hiding**: If no `Priority` action exists, and the winning rule is `Hide`, it hides.
-    4.  **Silence**: If no `Priority`/`Hide`, and winning rule is `Silent`, it silences.
+    1.  **Highest Integer**: The rule with the highest `priority` value wins.
+    2.  **Highest Logic (Within Band)**: If multiple rules have the *same highest priority*, `Priority` action wins.
+    3.  **Suppression**: If no `Priority` action exists at that level, and a rule matches `Suppress`, it hides.
+    4.  **Silence**: If no `Priority`/`Suppress`, and winning rule is `Silent`, it silences.
     5.  **Default**: `Show`.
+
+**Priority Enforcement:**
+The system "softly" enforces priority values between `-100` and `100`.
+- Values outside this range will trigger a **warning** in the UI (⚠️ Non-std).
+- **Important**: A `Priority` action rule with lower numeric priority (e.g., -10) will **NOT** override a rule with higher numeric priority (e.g., 50). Numeric priority always determines the "winner" first.
 
 **Standard Priority Levels:**
 
@@ -189,7 +215,7 @@ Rules can be assigned an integer `priority` value to resolve conflicts when mult
 Rules are evaluated in priority order:
 
 1. **Priority rules always win** - If any rule marks a notification as `Priority`, it shows
-2. **Hide rules evaluated next** - If any matching rule hides, notification is hidden
+2. **Suppress rules evaluated next** - If any matching rule suppresses, notification is hidden
 3. **Silent rules** - Notification shows but no desktop alert
 4. **Time-based rules checked against current time**
 5. **Schedule rules checked against current day/time**

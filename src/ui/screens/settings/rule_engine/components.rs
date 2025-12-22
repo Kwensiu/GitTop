@@ -6,7 +6,7 @@ use iced_aw::ContextMenu;
 
 use crate::settings::IconTheme;
 use crate::ui::screens::settings::rule_engine::rules::{
-    AccountRule, OrgRule, ScheduleRule, TimeRule, TypeRule,
+    AccountRule, OrgRule, RuleAction, ScheduleRule, TimeRule, TypeRule,
 };
 use crate::ui::{icons, theme};
 
@@ -98,72 +98,71 @@ fn view_context_menu_item(
 }
 
 // ============================================================================
-// Rule Cards with Context Menu
+// Warning Row Helper
 // ============================================================================
 
-pub fn view_time_rule_card(rule: &TimeRule) -> Element<'static, RuleEngineMessage> {
+fn view_warning_row(
+    message: &'static str,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
-    let id = rule.id.clone();
-    let id_delete = rule.id.clone();
-    let id_dup = rule.id.clone();
-    let name = rule.name.clone();
-    let time_range = format!("{} - {}", rule.start_time, rule.end_time);
-    let action = format!("Action: {}", rule.action);
-    let enabled = rule.enabled;
+    row![
+        icons::icon_alert(12.0, p.accent_warning, icon_theme),
+        Space::new().width(4),
+        text(message).size(11).color(p.accent_warning),
+    ]
+    .align_y(Alignment::Center)
+    .into()
+}
+
+// ============================================================================
+// Generic Rule Card Wrapper
+// ============================================================================
+
+/// Creates a rule card with consistent styling, toggler, and context menu.
+///
+/// This extracts the common pattern shared by all rule card types:
+/// - Card container with bg_card background and rounded corners
+/// - Info content on the left, toggler on the right
+/// - Context menu with Duplicate and Delete options
+fn view_rule_card<F1, F2, F3>(
+    id: String,
+    enabled: bool,
+    info_content: Element<'static, RuleEngineMessage>,
+    on_toggle: F1,
+    on_duplicate: F2,
+    on_delete: F3,
+) -> Element<'static, RuleEngineMessage>
+where
+    F1: Fn(String, bool) -> RuleEngineMessage + 'static + Clone,
+    F2: Fn(String) -> RuleEngineMessage + 'static + Clone,
+    F3: Fn(String) -> RuleEngineMessage + 'static + Clone,
+{
+    let id_toggle = id.clone();
+    let id_dup = id.clone();
+    let id_delete = id;
 
     let card_content = container(
         row![
-            column![
-                text(name).size(14).color(p.text_primary),
-                Space::new().height(4),
-                text(time_range).size(12).color(p.text_secondary),
-                text(action).size(11).color(p.text_muted),
-            ]
-            .width(Fill),
+            info_content,
             toggler(enabled)
-                .on_toggle(move |e| RuleEngineMessage::ToggleTimeRule(id.clone(), e))
+                .on_toggle(move |e| on_toggle(id_toggle.clone(), e))
                 .size(18),
         ]
         .align_y(Alignment::Center)
         .padding(14),
     )
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(p.bg_card)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    .style(|_| theme::rule_card_container());
 
     ContextMenu::new(card_content, move || {
         container(
             column![
-                view_context_menu_item(
-                    "Duplicate",
-                    RuleEngineMessage::DuplicateTimeRule(id_dup.clone())
-                ),
-                view_context_menu_item(
-                    "Delete",
-                    RuleEngineMessage::DeleteTimeRule(id_delete.clone())
-                ),
+                view_context_menu_item("Duplicate", on_duplicate(id_dup.clone())),
+                view_context_menu_item("Delete", on_delete(id_delete.clone())),
             ]
             .spacing(2),
         )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 6.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
-                blur_radius: 8.0,
-            },
-            ..Default::default()
-        })
+        .style(|_| theme::context_menu_container())
         .padding(4)
         .width(140)
         .into()
@@ -171,14 +170,49 @@ pub fn view_time_rule_card(rule: &TimeRule) -> Element<'static, RuleEngineMessag
     .into()
 }
 
-pub fn view_schedule_rule_card(rule: &ScheduleRule) -> Element<'static, RuleEngineMessage> {
+// ============================================================================
+// Rule Cards
+// ============================================================================
+
+pub fn view_time_rule_card(
+    rule: &TimeRule,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
-    let id = rule.id.clone();
-    let id_delete = rule.id.clone();
-    let id_dup = rule.id.clone();
-    let name = rule.name.clone();
-    let enabled = rule.enabled;
-    let action = format!("Action: {}", rule.action);
+
+    let time_range = format!("{} - {}", rule.start_time, rule.end_time);
+    let action_str = format!("Action: {}", rule.action.display_label());
+
+    let mut info_column = column![
+        text(rule.name.clone()).size(14).color(p.text_primary),
+        Space::new().height(4),
+        text(time_range).size(12).color(p.text_secondary),
+        text(action_str).size(11).color(p.text_muted),
+    ]
+    .width(Fill);
+
+    if rule.action == RuleAction::Hide {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Hides notifications", icon_theme));
+    }
+
+    view_rule_card(
+        rule.id.clone(),
+        rule.enabled,
+        info_column.into(),
+        RuleEngineMessage::ToggleTimeRule,
+        RuleEngineMessage::DuplicateTimeRule,
+        RuleEngineMessage::DeleteTimeRule,
+    )
+}
+
+pub fn view_schedule_rule_card(
+    rule: &ScheduleRule,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
+    let p = theme::palette();
+
+    let action_str = format!("Action: {}", rule.action.display_label());
 
     let days_text = rule
         .days
@@ -196,274 +230,133 @@ pub fn view_schedule_rule_card(rule: &ScheduleRule) -> Element<'static, RuleEngi
         .collect::<Vec<_>>()
         .join(", ");
 
-    let card_content = container(
-        row![
-            column![
-                text(name).size(14).color(p.text_primary),
-                Space::new().height(4),
-                text(days_text).size(12).color(p.text_secondary),
-                text(action).size(11).color(p.text_muted),
-            ]
-            .width(Fill),
-            toggler(enabled)
-                .on_toggle(move |e| RuleEngineMessage::ToggleScheduleRule(id.clone(), e))
-                .size(18),
-        ]
-        .align_y(Alignment::Center)
-        .padding(14),
-    )
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(p.bg_card)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    let mut info_column = column![
+        text(rule.name.clone()).size(14).color(p.text_primary),
+        Space::new().height(4),
+        text(days_text).size(12).color(p.text_secondary),
+        text(action_str).size(11).color(p.text_muted),
+    ]
+    .width(Fill);
 
-    ContextMenu::new(card_content, move || {
-        container(
-            column![
-                view_context_menu_item(
-                    "Duplicate",
-                    RuleEngineMessage::DuplicateScheduleRule(id_dup.clone())
-                ),
-                view_context_menu_item(
-                    "Delete",
-                    RuleEngineMessage::DeleteScheduleRule(id_delete.clone())
-                ),
-            ]
-            .spacing(2),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 6.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
-                blur_radius: 8.0,
-            },
-            ..Default::default()
-        })
-        .padding(4)
-        .width(140)
-        .into()
-    })
-    .into()
+    if rule.action == RuleAction::Hide {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Hides notifications", icon_theme));
+    }
+
+    view_rule_card(
+        rule.id.clone(),
+        rule.enabled,
+        info_column.into(),
+        RuleEngineMessage::ToggleScheduleRule,
+        RuleEngineMessage::DuplicateScheduleRule,
+        RuleEngineMessage::DeleteScheduleRule,
+    )
 }
 
-pub fn view_account_rule_card(rule: &AccountRule) -> Element<'static, RuleEngineMessage> {
+pub fn view_account_rule_card(
+    rule: &AccountRule,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
-    let id = rule.id.clone();
-    let id_delete = rule.id.clone();
-    let id_dup = rule.id.clone();
-    let account = rule.account.clone();
-    let enabled = rule.enabled;
-    let action = format!("Action: {}", rule.action);
 
-    let card_content = container(
-        row![
-            column![
-                text(account).size(14).color(p.text_primary),
-                text(action).size(11).color(p.text_muted),
-            ]
-            .width(Fill),
-            toggler(enabled)
-                .on_toggle(move |e| RuleEngineMessage::ToggleAccountRule(id.clone(), e))
-                .size(18),
-        ]
-        .align_y(Alignment::Center)
-        .padding(14),
+    let action_str = format!("Action: {}", rule.action.display_label());
+
+    let mut info_column = column![
+        text(rule.account.clone()).size(14).color(p.text_primary),
+        text(action_str).size(11).color(p.text_muted),
+    ]
+    .width(Fill);
+
+    if rule.action == RuleAction::Hide {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Hides notifications", icon_theme));
+    }
+
+    view_rule_card(
+        rule.id.clone(),
+        rule.enabled,
+        info_column.into(),
+        RuleEngineMessage::ToggleAccountRule,
+        RuleEngineMessage::DuplicateAccountRule,
+        RuleEngineMessage::DeleteAccountRule,
     )
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(p.bg_card)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-
-    ContextMenu::new(card_content, move || {
-        container(
-            column![
-                view_context_menu_item(
-                    "Duplicate",
-                    RuleEngineMessage::DuplicateAccountRule(id_dup.clone())
-                ),
-                view_context_menu_item(
-                    "Delete",
-                    RuleEngineMessage::DeleteAccountRule(id_delete.clone())
-                ),
-            ]
-            .spacing(2),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 6.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
-                blur_radius: 8.0,
-            },
-            ..Default::default()
-        })
-        .padding(4)
-        .width(140)
-        .into()
-    })
-    .into()
 }
 
-pub fn view_org_rule_card(rule: &OrgRule) -> Element<'static, RuleEngineMessage> {
+pub fn view_org_rule_card(
+    rule: &OrgRule,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
-    let id = rule.id.clone();
-    let id_delete = rule.id.clone();
-    let id_dup = rule.id.clone();
-    let org = rule.org.clone();
+
     let priority = format!("Priority: {}", rule.priority);
-    let action = format!("Action: {}", rule.action);
-    let enabled = rule.enabled;
+    let action_str = format!("Action: {}", rule.action.display_label());
 
-    let card_content = container(
-        row![
-            column![
-                text(org).size(14).color(p.text_primary),
-                text(priority).size(12).color(p.text_secondary),
-                text(action).size(11).color(p.text_muted),
-            ]
-            .width(Fill),
-            toggler(enabled)
-                .on_toggle(move |e| RuleEngineMessage::ToggleOrgRule(id.clone(), e))
-                .size(18),
-        ]
-        .align_y(Alignment::Center)
-        .padding(14),
+    let mut info_column = column![
+        text(rule.org.clone()).size(14).color(p.text_primary),
+        text(priority).size(12).color(p.text_secondary),
+        text(action_str).size(11).color(p.text_muted),
+    ]
+    .width(Fill);
+
+    if rule.priority > 100 || rule.priority < -100 {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Non-standard priority", icon_theme));
+    }
+    if rule.action == RuleAction::Hide {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Hides notifications", icon_theme));
+    }
+
+    view_rule_card(
+        rule.id.clone(),
+        rule.enabled,
+        info_column.into(),
+        RuleEngineMessage::ToggleOrgRule,
+        RuleEngineMessage::DuplicateOrgRule,
+        RuleEngineMessage::DeleteOrgRule,
     )
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(p.bg_card)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-
-    ContextMenu::new(card_content, move || {
-        container(
-            column![
-                view_context_menu_item(
-                    "Duplicate",
-                    RuleEngineMessage::DuplicateOrgRule(id_dup.clone())
-                ),
-                view_context_menu_item(
-                    "Delete",
-                    RuleEngineMessage::DeleteOrgRule(id_delete.clone())
-                ),
-            ]
-            .spacing(2),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 6.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
-                blur_radius: 8.0,
-            },
-            ..Default::default()
-        })
-        .padding(4)
-        .width(140)
-        .into()
-    })
-    .into()
 }
 
-pub fn view_type_rule_card(rule: &TypeRule) -> Element<'static, RuleEngineMessage> {
+pub fn view_type_rule_card(
+    rule: &TypeRule,
+    icon_theme: IconTheme,
+) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
-    let id = rule.id.clone();
-    let id_delete = rule.id.clone();
-    let id_dup = rule.id.clone();
-    let notification_type = rule.notification_type.clone();
+
     let account = rule.account.clone().unwrap_or_else(|| "Global".to_string());
     let priority = format!("Priority: {}", rule.priority);
-    let action = format!("Action: {}", rule.action);
-    let enabled = rule.enabled;
+    let action_str = format!("Action: {}", rule.action.display_label());
 
-    let card_content = container(
+    let mut info_column = column![
+        text(rule.notification_type.clone())
+            .size(14)
+            .color(p.text_primary),
+        Space::new().height(4),
         row![
-            column![
-                text(notification_type).size(14).color(p.text_primary),
-                Space::new().height(4),
-                row![
-                    text(account).size(12).color(p.text_secondary),
-                    text("•").size(12).color(p.text_muted),
-                    text(priority).size(12).color(p.text_secondary),
-                ]
-                .spacing(6),
-                text(action).size(11).color(p.text_muted),
-            ]
-            .width(Fill),
-            toggler(enabled)
-                .on_toggle(move |e| RuleEngineMessage::ToggleTypeRule(id.clone(), e))
-                .size(18),
+            text(account).size(12).color(p.text_secondary),
+            text("•").size(12).color(p.text_muted),
+            text(priority).size(12).color(p.text_secondary),
         ]
-        .align_y(Alignment::Center)
-        .padding(14),
-    )
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(p.bg_card)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+        .spacing(6),
+        text(action_str).size(11).color(p.text_muted),
+    ]
+    .width(Fill);
 
-    ContextMenu::new(card_content, move || {
-        container(
-            column![
-                view_context_menu_item(
-                    "Duplicate",
-                    RuleEngineMessage::DuplicateTypeRule(id_dup.clone())
-                ),
-                view_context_menu_item(
-                    "Delete",
-                    RuleEngineMessage::DeleteTypeRule(id_delete.clone())
-                ),
-            ]
-            .spacing(2),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_control)),
-            border: iced::Border {
-                radius: 6.0.into(),
-                color: p.border_subtle,
-                width: 1.0,
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 2.0),
-                blur_radius: 8.0,
-            },
-            ..Default::default()
-        })
-        .padding(4)
-        .width(140)
-        .into()
-    })
-    .into()
+    if rule.priority > 100 || rule.priority < -100 {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Non-standard priority", icon_theme));
+    }
+    if rule.action == RuleAction::Hide {
+        info_column = info_column.push(Space::new().height(4));
+        info_column = info_column.push(view_warning_row("Hides notifications", icon_theme));
+    }
+
+    view_rule_card(
+        rule.id.clone(),
+        rule.enabled,
+        info_column.into(),
+        RuleEngineMessage::ToggleTypeRule,
+        RuleEngineMessage::DuplicateTypeRule,
+        RuleEngineMessage::DeleteTypeRule,
+    )
 }

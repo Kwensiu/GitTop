@@ -6,7 +6,7 @@ use iced::{Alignment, Element, Fill};
 use crate::settings::AppSettings;
 use crate::ui::{icons, theme};
 
-use super::super::components::setting_card;
+use super::super::components::{setting_card, tab_title};
 use super::super::messages::SettingsMessage;
 
 /// Render the command center tab content.
@@ -31,13 +31,6 @@ pub fn view(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     }
 
     content.padding(24).width(Fill).into()
-}
-
-fn tab_title(title: &'static str) -> Element<'static, SettingsMessage> {
-    text(title)
-        .size(20)
-        .color(theme::palette().text_primary)
-        .into()
 }
 
 fn view_power_mode_setting(settings: &AppSettings) -> Element<'_, SettingsMessage> {

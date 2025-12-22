@@ -29,6 +29,16 @@ pub enum RuleAction {
 
 impl RuleAction {
     pub const ALL: &'static [Self] = &[Self::Show, Self::Silent, Self::Hide, Self::Priority];
+
+    /// User-facing display label for the action (used in rule cards).
+    pub fn display_label(&self) -> &'static str {
+        match self {
+            Self::Show => "Show",
+            Self::Silent => "Silent",
+            Self::Hide => "Suppress",
+            Self::Priority => "Priority",
+        }
+    }
 }
 
 impl std::fmt::Display for RuleAction {
@@ -36,7 +46,7 @@ impl std::fmt::Display for RuleAction {
         match self {
             Self::Show => write!(f, "Show"),
             Self::Silent => write!(f, "Silent"),
-            Self::Hide => write!(f, "Hide"),
+            Self::Hide => write!(f, "Suppress"),
             Self::Priority => write!(f, "Priority"),
         }
     }
@@ -52,6 +62,7 @@ pub const PRIORITY_DEFAULT: i32 = 0;
 pub const PRIORITY_LOW: i32 = -50;
 pub const PRIORITY_MIN: i32 = -100;
 
+#[allow(dead_code)]
 pub const PRIORITY_LEVELS: &[(&str, i32)] = &[
     ("Max (100)", PRIORITY_MAX),
     ("High (50)", PRIORITY_HIGH),
@@ -60,11 +71,16 @@ pub const PRIORITY_LEVELS: &[(&str, i32)] = &[
     ("Min (-100)", PRIORITY_MIN),
 ];
 
+fn default_priority() -> i32 {
+    PRIORITY_DEFAULT
+}
+
 // ============================================================================
 // RULE TYPES
 // ============================================================================
 
 /// Time-based quiet hours rule.
+/// TODO: v0.2+ Refactor time parsing to use a dedicated TimeHM struct to handle validation and locale issues.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeRule {
     pub id: String,
@@ -74,6 +90,8 @@ pub struct TimeRule {
     pub start_time: String,
     /// End time in HH:MM format (24h).
     pub end_time: String,
+    #[serde(default = "default_priority")]
+    pub priority: i32,
     pub action: RuleAction,
 }
 
@@ -85,6 +103,7 @@ impl TimeRule {
             enabled: true,
             start_time: start.into(),
             end_time: end.into(),
+            priority: PRIORITY_DEFAULT,
             action: RuleAction::Silent,
         }
     }
@@ -101,6 +120,8 @@ pub struct ScheduleRule {
     /// Optional time range within those days.
     pub start_time: Option<String>,
     pub end_time: Option<String>,
+    #[serde(default = "default_priority")]
+    pub priority: i32,
     pub action: RuleAction,
 }
 
@@ -113,6 +134,7 @@ impl ScheduleRule {
             days: vec![0, 6], // Sunday, Saturday
             start_time: None,
             end_time: None,
+            priority: PRIORITY_DEFAULT,
             action: RuleAction::Silent,
         }
     }
@@ -152,6 +174,7 @@ pub struct OrgRule {
 }
 
 impl OrgRule {
+    #[allow(dead_code)]
     pub fn new(org: impl Into<String>, priority: i32) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -270,42 +293,49 @@ impl RuleEngine {
         Self { rules }
     }
 
-    /// Check if the rule engine is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.rules.enabled
-    }
-
     /// Evaluate a notification and return the action to take.
     ///
     /// Priority order:
-    /// 1. Priority rules always win
+    /// 1. Priority rules always win (highest priority value wins among them)
     /// 2. Hide rules evaluated next
     /// 3. Silent rules
     /// 4. Default to Show
-    /// Evaluate a notification and return the action to take.
+    #[allow(dead_code)]
     pub fn evaluate(
         &self,
         notification_type: &str,
         repo_owner: Option<&str>,
         account: Option<&str>,
-        // We'll need current time for time/schedule rules
         now: &chrono::DateTime<chrono::Local>,
     ) -> RuleAction {
+        self.evaluate_detailed(notification_type, repo_owner, account, now)
+            .0
+    }
+
+    /// Evaluate with full trace of the decision.
+    pub fn evaluate_detailed(
+        &self,
+        notification_type: &str,
+        repo_owner: Option<&str>,
+        account: Option<&str>,
+        now: &chrono::DateTime<chrono::Local>,
+    ) -> (RuleAction, Option<RuleDecision>) {
         if !self.rules.enabled {
-            return RuleAction::Show;
+            return (RuleAction::Show, None);
         }
 
-        let mut matching_actions: Vec<(i32, RuleAction)> = Vec::new();
+        let mut matching_actions: Vec<(i32, RuleAction, String, RuleDecisionReason)> = Vec::new();
 
         // 1. Time Rules
         let time_str = now.format("%H:%M").to_string();
         for rule in &self.rules.time_rules {
             if rule.enabled && self.is_time_in_range(&time_str, &rule.start_time, &rule.end_time) {
-                // Time rules usually imply defaults, let's say they have generic "High" priority if strict,
-                // but usually they are just "Silent" or "Hide".
-                // We'll assign them a base priority of 0 unless otherwise specified (TimeRule needs priority field eventually?)
-                // For now, let's treat them as PRIORITY_DEFAULT (0).
-                matching_actions.push((PRIORITY_DEFAULT, rule.action));
+                matching_actions.push((
+                    rule.priority,
+                    rule.action,
+                    rule.id.clone(),
+                    RuleDecisionReason::TimeRule(rule.name.clone()),
+                ));
             }
         }
 
@@ -313,7 +343,6 @@ impl RuleEngine {
         let weekday = now.weekday().num_days_from_sunday() as u8; // 0=Sun, 6=Sat
         for rule in &self.rules.schedule_rules {
             if rule.enabled && rule.days.contains(&weekday) {
-                // Check optional time range
                 let in_time = if let (Some(start), Some(end)) = (&rule.start_time, &rule.end_time) {
                     self.is_time_in_range(&time_str, start, end)
                 } else {
@@ -321,7 +350,12 @@ impl RuleEngine {
                 };
 
                 if in_time {
-                    matching_actions.push((PRIORITY_DEFAULT, rule.action));
+                    matching_actions.push((
+                        rule.priority,
+                        rule.action,
+                        rule.id.clone(),
+                        RuleDecisionReason::ScheduleRule(rule.name.clone()),
+                    ));
                 }
             }
         }
@@ -330,8 +364,12 @@ impl RuleEngine {
         if let Some(acc) = account {
             for rule in &self.rules.account_rules {
                 if rule.enabled && rule.account.eq_ignore_ascii_case(acc) {
-                    // Account rules are usually user preference, treating as Default priority
-                    matching_actions.push((PRIORITY_DEFAULT, rule.action));
+                    matching_actions.push((
+                        PRIORITY_DEFAULT,
+                        rule.action,
+                        rule.id.clone(),
+                        RuleDecisionReason::AccountRule(rule.account.clone()),
+                    ));
                 }
             }
         }
@@ -340,7 +378,12 @@ impl RuleEngine {
         if let Some(owner) = repo_owner {
             for rule in &self.rules.org_rules {
                 if rule.enabled && rule.org.eq_ignore_ascii_case(owner) {
-                    matching_actions.push((rule.priority, rule.action));
+                    matching_actions.push((
+                        rule.priority,
+                        rule.action,
+                        rule.id.clone(),
+                        RuleDecisionReason::OrgRule(rule.org.clone()),
+                    ));
                 }
             }
         }
@@ -352,53 +395,71 @@ impl RuleEngine {
                     .notification_type
                     .eq_ignore_ascii_case(notification_type)
             {
-                // Check scoping
                 let account_match = match (&rule.account, account) {
-                    (None, _) => true, // Global rule
+                    (None, _) => true,
                     (Some(rule_acc), Some(notif_acc)) => rule_acc.eq_ignore_ascii_case(notif_acc),
                     (Some(_), None) => false,
                 };
 
                 if account_match {
-                    matching_actions.push((rule.priority, rule.action));
+                    matching_actions.push((
+                        rule.priority,
+                        rule.action,
+                        rule.id.clone(),
+                        RuleDecisionReason::TypeRule(rule.notification_type.clone()),
+                    ));
                 }
             }
         }
 
-        // Logic Implementation:
-        // 1. Sort by Priority (Desc)
-        // 2. Resolve conflicts (Priority Action > Hide > Silent > Show)
-
         if matching_actions.is_empty() {
-            return RuleAction::Show;
+            return (RuleAction::Show, None);
         }
 
-        // sort by priority descending
+        // Sort by priority descending
         matching_actions.sort_by(|a, b| b.0.cmp(&a.0));
 
-        // Get the highest priority value found
+        // Get max priority
         let max_priority = matching_actions[0].0;
 
-        // Filter for only those with the max priority
-        let same_priority_rules: Vec<RuleAction> = matching_actions
-            .iter()
-            .filter(|(p, _)| *p == max_priority)
-            .map(|(_, a)| *a)
-            .collect();
+        // Iterate through matching actions to find the winner
+        // We only care about rules with the max priority level
+        // Conflict Resolution: Priority > Hide > Silent > Show
 
-        // Conflict Resolution:
-        // Priority > Hide > Silent > Show
-        if same_priority_rules.contains(&RuleAction::Priority) {
-            return RuleAction::Priority;
-        }
-        if same_priority_rules.contains(&RuleAction::Hide) {
-            return RuleAction::Hide;
-        }
-        if same_priority_rules.contains(&RuleAction::Silent) {
-            return RuleAction::Silent;
+        // Optimization: Find the best action within the max priority band without cloning
+        let mut best_action = RuleAction::Show;
+        let mut best_decision: Option<RuleDecision> = None;
+
+        for (p, action, id, reason) in matching_actions.iter() {
+            if *p != max_priority {
+                break; // Because sorted descending, we can stop once priority drops
+            }
+
+            let is_better = match (best_action, action) {
+                (RuleAction::Priority, _) => false, // Only another Priority could match, which is same level
+                (_, RuleAction::Priority) => true,  // Priority always beats non-Priority
+                (RuleAction::Hide, _) => false,     // Hide beats Silent/Show
+                (_, RuleAction::Hide) => true,      // Hide beats Silent/Show
+                (RuleAction::Silent, _) => false,   // Silent beats Show
+                (_, RuleAction::Silent) => true,    // Silent beats Show
+                (RuleAction::Show, RuleAction::Show) => false, // Same level
+            };
+
+            // First valid rule sets the baseline.
+            // If best_decision is None, we take the first one.
+            // If we found a strictly "better" action, we take it.
+            if best_decision.is_none() || is_better {
+                best_action = *action;
+                best_decision = Some(RuleDecision {
+                    applied_rule_id: id.clone(),
+                    action: *action,
+                    priority: *p,
+                    reason: reason.clone(),
+                });
+            }
         }
 
-        RuleAction::Show
+        (best_action, best_decision)
     }
 
     /// Helper to check if current time string "HH:MM" is in range [start, end].
@@ -411,6 +472,24 @@ impl RuleEngine {
             current >= start || current <= end
         }
     }
+}
+
+/// Trace of why a specific rule was applied.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuleDecision {
+    pub applied_rule_id: String,
+    pub action: RuleAction,
+    pub priority: i32,
+    pub reason: RuleDecisionReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RuleDecisionReason {
+    TimeRule(String),
+    ScheduleRule(String),
+    AccountRule(String),
+    OrgRule(String),
+    TypeRule(String),
 }
 
 #[cfg(test)]
@@ -430,5 +509,145 @@ mod tests {
         assert!(rule.enabled);
         assert_eq!(rule.start_time, "22:00");
         assert_eq!(rule.end_time, "07:00");
+    }
+
+    #[test]
+    fn test_priority_resolution() {
+        let mut rules = NotificationRuleSet::default();
+        rules.enabled = true;
+
+        // 1. High Priority Org Rule (Priority 50) -> Show
+        let org_rule = OrgRule {
+            id: "org1".to_string(),
+            enabled: true,
+            org: "WorkOrg".to_string(),
+            priority: 50,
+            action: RuleAction::Show,
+        };
+        rules.org_rules.push(org_rule);
+
+        // 2. Default Priority Time Rule (Priority 0) -> Silent
+        // This simulates "Night Mode" which usually defaults to 0 priority
+        let time_rule = TimeRule {
+            id: "time1".to_string(),
+            name: "Night".to_string(),
+            enabled: true,
+            start_time: "00:00".to_string(),
+            end_time: "23:59".to_string(), // Always active
+            priority: PRIORITY_DEFAULT,
+            action: RuleAction::Silent,
+        };
+        rules.time_rules.push(time_rule);
+
+        let engine = RuleEngine::new(rules);
+        let now = chrono::Local::now();
+
+        // Evaluate for WorkOrg
+        // Org Rule (50) > Time Rule (0). Action should be Show (from Org Rule).
+        let (action, decision) = engine.evaluate_detailed("mention", Some("WorkOrg"), None, &now);
+
+        assert_eq!(action, RuleAction::Show);
+        let decision = decision.expect("Should have a decision");
+
+        // Check for context in reason
+        match decision.reason {
+            RuleDecisionReason::OrgRule(ref r) => assert_eq!(r, "WorkOrg"),
+            _ => panic!("Expected OrgRule reason"),
+        }
+        assert_eq!(decision.priority, 50);
+    }
+
+    #[test]
+    fn test_action_conflict_resolution() {
+        // Test: Same priority, different actions. Priority > Hide > Silent > Show
+        let mut rules = NotificationRuleSet::default();
+        rules.enabled = true;
+
+        // 1. Type Rule: Hide (Priority 0)
+        let type_rule = TypeRule {
+            id: "type1".to_string(),
+            enabled: true,
+            notification_type: "ci_activity".to_string(),
+            account: None,
+            priority: 0,
+            action: RuleAction::Hide,
+        };
+        rules.type_rules.push(type_rule);
+
+        // 2. Time Rule: Silent (Priority 0)
+        let time_rule = TimeRule {
+            id: "time1".to_string(),
+            name: "Always".to_string(),
+            enabled: true,
+            start_time: "00:00".to_string(),
+            end_time: "23:59".to_string(),
+            priority: 0,
+            action: RuleAction::Silent,
+        };
+        rules.time_rules.push(time_rule);
+
+        let engine = RuleEngine::new(rules);
+        let now = chrono::Local::now();
+
+        // Both apply with Priority 0.
+        // Hide > Silent. Should be Hide.
+        let (action, decision) = engine.evaluate_detailed("ci_activity", None, None, &now);
+
+        assert_eq!(action, RuleAction::Hide);
+        let decision = decision.expect("Should have a decision");
+
+        match decision.reason {
+            RuleDecisionReason::TypeRule(ref t) => assert_eq!(t, "ci_activity"),
+            _ => panic!("Expected TypeRule reason"),
+        }
+    }
+
+    #[test]
+    fn test_priority_action_does_not_override_higher_numeric_priority() {
+        // Regression test: A rule with RuleAction::Priority should NOT override a rule with higher numeric priority.
+        let mut rules = NotificationRuleSet::default();
+        rules.enabled = true;
+
+        // 1. Low Priority Rule with "Priority" action (Priority -10)
+        // Using TypeRule for this
+        let low_prio_rule = TypeRule {
+            id: "low_prio".to_string(),
+            enabled: true,
+            notification_type: "review_requested".to_string(),
+            account: None,
+            priority: -10,
+            action: RuleAction::Priority,
+        };
+        rules.type_rules.push(low_prio_rule);
+
+        // 2. High Priority Rule with "Silent" action (Priority 50)
+        // Using OrgRule
+        let high_prio_rule = OrgRule {
+            id: "high_prio".to_string(),
+            enabled: true,
+            org: "WorkOrg".to_string(),
+            priority: 50,
+            action: RuleAction::Silent,
+        };
+        rules.org_rules.push(high_prio_rule);
+
+        let engine = RuleEngine::new(rules);
+        let now = chrono::Local::now();
+
+        // Evaluate
+        // High Prio (50) > Low Prio (-10), even though Low Prio has Action::Priority.
+        // The numeric priority band wins first.
+        let (action, decision) =
+            engine.evaluate_detailed("review_requested", Some("WorkOrg"), None, &now);
+
+        assert_eq!(action, RuleAction::Silent);
+        let decision = decision.expect("Should have a decision");
+
+        // Assert that the high priority rule won
+        assert_eq!(decision.priority, 50);
+        match decision.reason {
+            RuleDecisionReason::OrgRule(ref o) => assert_eq!(o, "WorkOrg"),
+            _ => panic!("Expected OrgRule to win due to higher numeric priority"),
+        }
     }
 }

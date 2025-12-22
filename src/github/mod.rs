@@ -9,5 +9,5 @@ pub mod types;
 pub use auth::AuthManager;
 pub use client::{GitHubClient, GitHubError};
 pub use keyring::AccountKeyring;
-pub use session::{Session, SessionError, SessionManager};
+pub use session::{Session, SessionManager};
 pub use types::*;

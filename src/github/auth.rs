@@ -18,9 +18,6 @@ pub enum AuthError {
 
     #[error("GitHub API error: {0}")]
     GitHub(#[from] GitHubError),
-
-    #[error("Token validation failed: {0}")]
-    ValidationFailed(String),
 }
 
 /// Authentication manager handling token storage and validation.
@@ -41,16 +38,6 @@ impl AuthManager {
         Ok(())
     }
 
-    /// Loads the token from secure storage.
-    pub fn load_token() -> Result<Option<String>, AuthError> {
-        let entry = Self::get_entry()?;
-        match entry.get_password() {
-            Ok(token) => Ok(Some(token)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(AuthError::Keyring(e.to_string())),
-        }
-    }
-
     /// Deletes the stored token.
     pub fn delete_token() -> Result<(), AuthError> {
         let entry = Self::get_entry()?;
@@ -61,59 +48,14 @@ impl AuthManager {
         }
     }
 
-    /// Validates a token by making a test API call.
-    /// Returns user info if valid.
-    pub async fn validate_token(token: &str) -> Result<UserInfo, AuthError> {
-        // Basic format validation
-        if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
-            return Err(AuthError::ValidationFailed(
-                "Token must start with 'ghp_' or 'github_pat_'".to_string(),
-            ));
-        }
-
-        // Create a temporary client to validate
-        let client = GitHubClient::new(token)?;
-
-        // Fetch user info to validate the token
-        let user = client.get_authenticated_user().await?;
-
-        Ok(user)
-    }
-
     /// Full authentication flow: validate token, save to keyring, return user info.
     pub async fn authenticate(token: &str) -> Result<(GitHubClient, UserInfo), AuthError> {
-        // Validate by fetching user info
-        let user = Self::validate_token(token).await?;
+        // Validate and create client
+        let (client, user) = GitHubClient::validate_token(token).await?;
 
         // Save to secure storage
         Self::save_token(token)?;
 
-        // Create the client
-        let client = GitHubClient::new(token)?;
-
         Ok((client, user))
-    }
-
-    /// Attempt to load saved credentials and create a client.
-    /// Returns None if no token is stored or if the token is invalid.
-    pub async fn try_restore() -> Result<Option<(GitHubClient, UserInfo)>, AuthError> {
-        let token = match Self::load_token()? {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-
-        // Validate the stored token
-        match Self::validate_token(&token).await {
-            Ok(user) => {
-                let client = GitHubClient::new(&token)?;
-                Ok(Some((client, user)))
-            }
-            Err(AuthError::GitHub(GitHubError::Unauthorized)) => {
-                // Token expired, clean up
-                let _ = Self::delete_token();
-                Ok(None)
-            }
-            Err(e) => Err(e),
-        }
     }
 }

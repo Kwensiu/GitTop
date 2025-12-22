@@ -1,6 +1,6 @@
 //! Shared components for settings tabs.
 
-use iced::widget::container;
+use iced::widget::{container, text};
 use iced::Element;
 
 use crate::ui::theme;
@@ -22,5 +22,13 @@ pub fn setting_card<'a>(
             },
             ..Default::default()
         })
+        .into()
+}
+
+/// Styled title for settings tabs.
+pub fn tab_title(title: &'static str) -> Element<'static, SettingsMessage> {
+    text(title)
+        .size(20)
+        .color(theme::palette().text_primary)
         .into()
 }

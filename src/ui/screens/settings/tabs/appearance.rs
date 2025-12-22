@@ -6,7 +6,7 @@ use iced::{Alignment, Element, Fill};
 use crate::settings::{AppSettings, AppTheme, IconTheme};
 use crate::ui::theme;
 
-use super::super::components::setting_card;
+use super::super::components::{setting_card, tab_title};
 use super::super::messages::SettingsMessage;
 
 /// Render the appearance tab content.
@@ -33,13 +33,6 @@ pub fn view(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     .into()
 }
 
-fn tab_title(title: &'static str) -> Element<'static, SettingsMessage> {
-    text(title)
-        .size(20)
-        .color(theme::palette().text_primary)
-        .into()
-}
-
 fn view_theme_setting(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     let p = theme::palette();
     let current_theme = settings.theme;
@@ -64,7 +57,9 @@ fn view_theme_setting(settings: &AppSettings) -> Element<'_, SettingsMessage> {
             .width(Fill),
             pick_list(themes, Some(current_theme), SettingsMessage::ChangeTheme)
                 .text_size(13)
-                .padding([8, 12]),
+                .padding([8, 12])
+                .style(theme::pick_list_style)
+                .menu_style(theme::menu_style),
         ]
         .align_y(Alignment::Center),
     )
