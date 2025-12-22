@@ -5,7 +5,7 @@
 //! - Platform-aware defaults
 //! - Clean, professional aesthetic with subtle depth
 
-use iced::widget::{button, container, scrollable, text, text_input};
+use iced::widget::{button, container, pick_list, scrollable, text, text_input};
 use iced::{Background, Border, Color, Theme};
 
 use crate::settings::AppTheme;
@@ -251,8 +251,11 @@ use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 /// Global theme storage (thread-safe)
 static CURRENT_THEME: AtomicU8 = AtomicU8::new(0);
 
-/// Global font scale storage (stored as f32 bits in AtomicU32)
-static FONT_SCALE: AtomicU32 = AtomicU32::new(0x3F800000); // 1.0f32
+/// Global font scale for notifications (stored as f32 bits in AtomicU32)
+static NOTIFICATION_FONT_SCALE: AtomicU32 = AtomicU32::new(0x3F800000); // 1.0f32
+
+/// Global font scale for sidebar (stored as f32 bits in AtomicU32)
+static SIDEBAR_FONT_SCALE: AtomicU32 = AtomicU32::new(0x3F800000); // 1.0f32
 
 /// Set the current theme (call this when user changes theme in settings)
 pub fn set_theme(theme: AppTheme) {
@@ -264,20 +267,36 @@ pub fn current_theme() -> AppTheme {
     AppTheme::from_u8(CURRENT_THEME.load(Ordering::Relaxed))
 }
 
-/// Set the font scale (0.8 - 1.5)
-pub fn set_font_scale(scale: f32) {
-    FONT_SCALE.store(scale.to_bits(), Ordering::Relaxed);
+/// Set the notification font scale (0.8 - 1.5)
+pub fn set_notification_font_scale(scale: f32) {
+    NOTIFICATION_FONT_SCALE.store(scale.to_bits(), Ordering::Relaxed);
 }
 
-/// Get the current font scale
-pub fn font_scale() -> f32 {
-    f32::from_bits(FONT_SCALE.load(Ordering::Relaxed))
+/// Get the notification font scale
+pub fn notification_font_scale() -> f32 {
+    f32::from_bits(NOTIFICATION_FONT_SCALE.load(Ordering::Relaxed))
 }
 
-/// Get a scaled font size (base * font_scale)
+/// Get a scaled font size for notifications
 #[inline]
-pub fn scaled(base_size: f32) -> f32 {
-    base_size * font_scale()
+pub fn notification_scaled(base_size: f32) -> f32 {
+    base_size * notification_font_scale()
+}
+
+/// Set the sidebar font scale (0.8 - 1.5)
+pub fn set_sidebar_font_scale(scale: f32) {
+    SIDEBAR_FONT_SCALE.store(scale.to_bits(), Ordering::Relaxed);
+}
+
+/// Get the sidebar font scale
+pub fn sidebar_font_scale() -> f32 {
+    f32::from_bits(SIDEBAR_FONT_SCALE.load(Ordering::Relaxed))
+}
+
+/// Get a scaled font size for sidebar
+#[inline]
+pub fn sidebar_scaled(base_size: f32) -> f32 {
+    base_size * sidebar_font_scale()
 }
 
 /// Get the current theme palette
@@ -363,25 +382,6 @@ pub fn ghost_button(_: &Theme, status: button::Status) -> button::Style {
         border: Border {
             radius: 6.0.into(),
             ..Default::default()
-        },
-        ..Default::default()
-    }
-}
-
-pub fn secondary_button(_: &Theme, status: button::Status) -> button::Style {
-    let p = palette();
-    let bg = match status {
-        button::Status::Hovered => p.bg_hover,
-        button::Status::Pressed => p.bg_active,
-        _ => p.bg_control,
-    };
-    button::Style {
-        background: Some(Background::Color(bg)),
-        text_color: p.text_primary,
-        border: Border {
-            color: p.border,
-            width: 1.0,
-            radius: 6.0.into(),
         },
         ..Default::default()
     }
@@ -504,5 +504,30 @@ pub fn scrollbar(_: &Theme, _status: scrollable::Status) -> scrollable::Style {
             shadow: iced::Shadow::default(),
             icon: Color::BLACK,
         },
+    }
+}
+
+// ============================================================================
+// PICK LIST STYLE
+// ============================================================================
+
+pub fn pick_list_style(_: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let p = palette();
+    let (bg, border) = match status {
+        pick_list::Status::Active => (p.bg_control, p.border),
+        pick_list::Status::Hovered => (p.bg_hover, p.border),
+        pick_list::Status::Opened { .. } => (p.bg_active, p.accent),
+    };
+
+    pick_list::Style {
+        text_color: p.text_primary,
+        placeholder_color: p.text_muted,
+        background: Background::Color(bg),
+        border: Border {
+            radius: 6.0.into(),
+            width: 1.0,
+            color: border,
+        },
+        handle_color: p.text_secondary,
     }
 }

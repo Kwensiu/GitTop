@@ -1,50 +1,47 @@
-//! Settings screen - theme, icon style, and account management.
+//! Settings screen - main screen with tab navigation.
 
-use iced::widget::{button, column, container, pick_list, row, text, toggler, Space};
-use iced::{Alignment, Element, Fill, Task};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::{Alignment, Element, Fill, Length, Task};
 
-use crate::settings::{AppSettings, AppTheme, IconTheme, StoredAccount};
+use crate::github::{AccountKeyring, GitHubClient};
+use crate::settings::{AppSettings, IconTheme};
 use crate::ui::{icons, theme};
+
+use super::messages::{SettingsMessage, SettingsTab};
+use super::tabs::{accounts, appearance, behavior, command_center, notifications};
 
 /// Settings screen state.
 #[derive(Debug, Clone)]
 pub struct SettingsScreen {
     pub settings: AppSettings,
-}
-
-/// Settings screen messages.
-#[derive(Debug, Clone)]
-pub enum SettingsMessage {
-    /// Go back to notifications.
-    Back,
-    /// Change app theme.
-    ChangeTheme(AppTheme),
-    /// Toggle icon theme.
-    ToggleIconTheme(bool),
-    /// Toggle minimize to tray.
-    ToggleMinimizeToTray(bool),
-    /// Set font scale (0.8 - 1.5).
-    SetFontScale(f32),
-    /// Remove an account.
-    RemoveAccount(String),
+    pub selected_tab: SettingsTab,
+    pub accounts_state: accounts::AccountsTabState,
 }
 
 impl SettingsScreen {
     pub fn new(settings: AppSettings) -> Self {
-        Self { settings }
+        Self {
+            settings,
+            selected_tab: SettingsTab::default(),
+            accounts_state: accounts::AccountsTabState::default(),
+        }
     }
 
     pub fn update(&mut self, message: SettingsMessage) -> Task<SettingsMessage> {
         match message {
-            SettingsMessage::Back => {
-                // Handled by parent
+            SettingsMessage::Back => Task::none(),
+            SettingsMessage::SelectTab(tab) => {
+                self.selected_tab = tab;
+                // Clear any messages when switching tabs
+                self.accounts_state.error_message = None;
+                self.accounts_state.success_message = None;
                 Task::none()
             }
             SettingsMessage::ChangeTheme(new_theme) => {
                 self.settings.theme = new_theme;
-                // Update global theme for immediate effect
                 theme::set_theme(new_theme);
                 let _ = self.settings.save();
+                crate::platform::trim_memory();
                 Task::none()
             }
             SettingsMessage::ToggleIconTheme(use_svg) => {
@@ -54,6 +51,7 @@ impl SettingsScreen {
                     IconTheme::Emoji
                 };
                 let _ = self.settings.save();
+                crate::platform::trim_memory();
                 Task::none()
             }
             SettingsMessage::ToggleMinimizeToTray(enabled) => {
@@ -62,27 +60,126 @@ impl SettingsScreen {
                 Task::none()
             }
             SettingsMessage::RemoveAccount(username) => {
+                // Remove from settings
                 self.settings.remove_account(&username);
+                let _ = self.settings.save();
+                // Remove from keyring
+                let _ = AccountKeyring::delete_token(&username);
+                Task::none()
+            }
+            SettingsMessage::SetNotificationFontScale(scale) => {
+                let clamped = scale.clamp(0.8, 1.5);
+                self.settings.notification_font_scale = clamped;
+                theme::set_notification_font_scale(clamped);
+                let _ = self.settings.save();
+                crate::platform::trim_memory();
+                Task::none()
+            }
+            SettingsMessage::SetSidebarFontScale(scale) => {
+                let clamped = scale.clamp(0.8, 1.5);
+                self.settings.sidebar_font_scale = clamped;
+                theme::set_sidebar_font_scale(clamped);
+                let _ = self.settings.save();
+                crate::platform::trim_memory();
+                Task::none()
+            }
+            SettingsMessage::SetSidebarWidth(width) => {
+                let clamped = width.clamp(180.0, 400.0);
+                self.settings.sidebar_width = clamped;
+                let _ = self.settings.save();
+                crate::platform::trim_memory();
+                Task::none()
+            }
+            SettingsMessage::TogglePowerMode(enabled) => {
+                self.settings.power_mode = enabled;
                 let _ = self.settings.save();
                 Task::none()
             }
-            SettingsMessage::SetFontScale(scale) => {
-                // Clamp to valid range
-                let clamped = scale.clamp(0.8, 1.5);
-                self.settings.font_scale = clamped;
-                // Update global font scale for immediate effect
-                theme::set_font_scale(clamped);
-                let _ = self.settings.save();
+            SettingsMessage::OpenRuleEngine => {
+                // Handled by parent (app.rs)
+                Task::none()
+            }
+            SettingsMessage::AddAccount => {
+                // Clear messages and show input
+                self.accounts_state.error_message = None;
+                self.accounts_state.success_message = None;
+                Task::none()
+            }
+            SettingsMessage::TokenInputChanged(token) => {
+                self.accounts_state.token_input = token;
+                self.accounts_state.error_message = None;
+                Task::none()
+            }
+            SettingsMessage::SubmitToken => {
+                let token = self.accounts_state.token_input.clone();
+                if token.is_empty() {
+                    self.accounts_state.error_message = Some("Token cannot be empty".to_string());
+                    return Task::none();
+                }
+
+                // Basic validation
+                if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
+                    self.accounts_state.error_message =
+                        Some("Token must start with 'ghp_' or 'github_pat_'".to_string());
+                    return Task::none();
+                }
+
+                self.accounts_state.is_validating = true;
+                self.accounts_state.error_message = None;
+
+                // Validate token asynchronously
+                Task::perform(
+                    async move {
+                        match GitHubClient::new(&token) {
+                            Ok(client) => match client.get_authenticated_user().await {
+                                Ok(user) => {
+                                    // Save to keyring
+                                    if let Err(e) = AccountKeyring::save_token(&user.login, &token)
+                                    {
+                                        return Err(format!("Failed to save token: {}", e));
+                                    }
+                                    Ok(user.login)
+                                }
+                                Err(e) => Err(format!("Validation failed: {}", e)),
+                            },
+                            Err(e) => Err(format!("Invalid token: {}", e)),
+                        }
+                    },
+                    SettingsMessage::TokenValidated,
+                )
+            }
+            SettingsMessage::TokenValidated(result) => {
+                self.accounts_state.is_validating = false;
+                match result {
+                    Ok(username) => {
+                        // Add to settings
+                        self.settings.set_active_account(&username);
+                        let _ = self.settings.save();
+                        self.accounts_state.token_input.clear();
+                        self.accounts_state.success_message =
+                            Some(format!("Account '{}' added successfully!", username));
+                    }
+                    Err(error) => {
+                        self.accounts_state.error_message = Some(error);
+                    }
+                }
                 Task::none()
             }
         }
     }
 
+    // ========================================================================
+    // Main Layout
+    // ========================================================================
+
     pub fn view(&self) -> Element<'_, SettingsMessage> {
         let header = self.view_header();
-        let content = self.view_content();
+        let sidebar = self.view_sidebar();
+        let content = self.view_tab_content();
 
-        column![header, content]
+        let main_area = row![sidebar, content].height(Fill);
+
+        column![header, main_area]
             .spacing(0)
             .width(Fill)
             .height(Fill)
@@ -122,30 +219,124 @@ impl SettingsScreen {
             .into()
     }
 
-    fn view_content(&self) -> Element<'_, SettingsMessage> {
+    // ========================================================================
+    // Sidebar Navigation
+    // ========================================================================
+
+    fn view_sidebar(&self) -> Element<'_, SettingsMessage> {
+        let icon_theme = self.settings.icon_theme;
+
+        let nav_items = column![
+            self.view_nav_item(
+                "Appearance",
+                SettingsTab::Appearance,
+                icons::icon_palette(
+                    16.0,
+                    self.nav_icon_color(SettingsTab::Appearance),
+                    icon_theme
+                )
+            ),
+            self.view_nav_item(
+                "Behavior",
+                SettingsTab::Behavior,
+                icons::icon_settings(16.0, self.nav_icon_color(SettingsTab::Behavior), icon_theme)
+            ),
+            self.view_nav_item(
+                "Command Center",
+                SettingsTab::CommandCenter,
+                icons::icon_power(
+                    16.0,
+                    self.nav_icon_color(SettingsTab::CommandCenter),
+                    icon_theme
+                )
+            ),
+            self.view_nav_item(
+                "Notifications",
+                SettingsTab::Notifications,
+                icons::icon_notification(
+                    16.0,
+                    self.nav_icon_color(SettingsTab::Notifications),
+                    icon_theme
+                )
+            ),
+            self.view_nav_item(
+                "Accounts",
+                SettingsTab::Accounts,
+                icons::icon_user(16.0, self.nav_icon_color(SettingsTab::Accounts), icon_theme)
+            ),
+        ]
+        .spacing(4)
+        .padding([16, 8]);
+
+        container(nav_items)
+            .width(Length::Fixed(self.settings.sidebar_width))
+            .height(Fill)
+            .style(theme::sidebar)
+            .into()
+    }
+
+    fn nav_icon_color(&self, tab: SettingsTab) -> iced::Color {
+        let p = theme::palette();
+        if self.selected_tab == tab {
+            p.accent
+        } else {
+            p.text_secondary
+        }
+    }
+
+    fn view_nav_item<'a>(
+        &self,
+        label: &'static str,
+        tab: SettingsTab,
+        icon: Element<'a, SettingsMessage>,
+    ) -> Element<'a, SettingsMessage> {
+        let p = theme::palette();
+        let is_selected = self.selected_tab == tab;
+
+        let text_color = if is_selected {
+            p.accent
+        } else {
+            p.text_primary
+        };
+
+        let content = row![
+            icon,
+            Space::new().width(10),
+            text(label)
+                .size(theme::sidebar_scaled(13.0))
+                .color(text_color),
+        ]
+        .align_y(Alignment::Center)
+        .padding([10, 12]);
+
+        button(content)
+            .style(move |theme, status| (theme::sidebar_button(is_selected))(theme, status))
+            .on_press(SettingsMessage::SelectTab(tab))
+            .width(Fill)
+            .into()
+    }
+
+    // ========================================================================
+    // Tab Content
+    // ========================================================================
+
+    fn view_tab_content(&self) -> Element<'_, SettingsMessage> {
         let p = theme::palette();
 
-        let content = column![
-            // Appearance Section
-            self.view_section_header("Appearance"),
-            self.view_theme_setting(),
-            Space::new().height(8),
-            self.view_icon_theme_setting(),
-            Space::new().height(8),
-            self.view_font_scale_setting(),
-            Space::new().height(24),
-            // Behavior Section
-            self.view_section_header("Behavior"),
-            self.view_minimize_to_tray_setting(),
-            Space::new().height(24),
-            // Accounts Section
-            self.view_section_header("Accounts"),
-            self.view_accounts_section(),
-        ]
-        .spacing(8)
-        .padding(20);
+        let content = match self.selected_tab {
+            SettingsTab::Appearance => appearance::view(&self.settings),
+            SettingsTab::Behavior => behavior::view(&self.settings),
+            SettingsTab::CommandCenter => command_center::view(&self.settings),
+            SettingsTab::Notifications => notifications::view(),
+            SettingsTab::Accounts => accounts::view(&self.settings, &self.accounts_state),
+        };
 
-        container(content)
+        let scrollable_content = scrollable(content)
+            .width(Fill)
+            .height(Fill)
+            .style(theme::scrollbar);
+
+        container(scrollable_content)
             .width(Fill)
             .height(Fill)
             .style(move |_| container::Style {
@@ -153,234 +344,5 @@ impl SettingsScreen {
                 ..Default::default()
             })
             .into()
-    }
-
-    fn view_section_header(&self, title: &'static str) -> Element<'static, SettingsMessage> {
-        let p = theme::palette();
-        text(title).size(11).color(p.text_muted).into()
-    }
-
-    fn view_theme_setting(&self) -> Element<'_, SettingsMessage> {
-        let p = theme::palette();
-        let current_theme = self.settings.theme;
-
-        let themes = vec![
-            AppTheme::Light,
-            AppTheme::Steam,
-            AppTheme::GtkDark,
-            AppTheme::Windows11,
-            AppTheme::MacOS,
-            AppTheme::HighContrast,
-        ];
-
-        container(
-            row![
-                column![
-                    text("Theme").size(14).color(p.text_primary),
-                    Space::new().height(4),
-                    text("Visual style and color palette")
-                        .size(11)
-                        .color(p.text_secondary),
-                ]
-                .width(Fill),
-                pick_list(themes, Some(current_theme), SettingsMessage::ChangeTheme)
-                    .text_size(13)
-                    .padding([8, 12]),
-            ]
-            .align_y(Alignment::Center)
-            .padding(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_card)),
-            border: iced::Border {
-                radius: 8.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_icon_theme_setting(&self) -> Element<'_, SettingsMessage> {
-        let p = theme::palette();
-        let use_svg = self.settings.icon_theme == IconTheme::Svg;
-
-        let description = if use_svg {
-            "High quality SVG icons"
-        } else {
-            "Emoji icons (minimal memory)"
-        };
-
-        container(
-            row![
-                column![
-                    text("Icon Style").size(14).color(p.text_primary),
-                    Space::new().height(4),
-                    text(description).size(11).color(p.text_secondary),
-                ]
-                .width(Fill),
-                toggler(use_svg)
-                    .on_toggle(SettingsMessage::ToggleIconTheme)
-                    .size(20),
-            ]
-            .align_y(Alignment::Center)
-            .padding(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_card)),
-            border: iced::Border {
-                radius: 8.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_font_scale_setting(&self) -> Element<'_, SettingsMessage> {
-        let p = theme::palette();
-        let scale = self.settings.font_scale;
-
-        // Format scale as percentage
-        let scale_text = format!("{}%", (scale * 100.0) as i32);
-
-        container(
-            column![
-                row![
-                    text("Text Size").size(14).color(p.text_primary),
-                    Space::new().width(Fill),
-                    text(scale_text).size(12).color(p.text_secondary),
-                ]
-                .align_y(Alignment::Center),
-                Space::new().height(8),
-                text("Affects notifications and sidebar")
-                    .size(11)
-                    .color(p.text_muted),
-                Space::new().height(12),
-                iced::widget::slider(0.8..=1.5, scale, SettingsMessage::SetFontScale).step(0.05),
-            ]
-            .padding(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_card)),
-            border: iced::Border {
-                radius: 8.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_minimize_to_tray_setting(&self) -> Element<'_, SettingsMessage> {
-        let p = theme::palette();
-        let enabled = self.settings.minimize_to_tray;
-
-        let description = if enabled {
-            "App stays in system tray when closed"
-        } else {
-            "App exits when closed"
-        };
-
-        container(
-            row![
-                column![
-                    text("Minimize to Tray").size(14).color(p.text_primary),
-                    Space::new().height(4),
-                    text(description).size(11).color(p.text_secondary),
-                ]
-                .width(Fill),
-                toggler(enabled)
-                    .on_toggle(SettingsMessage::ToggleMinimizeToTray)
-                    .size(20),
-            ]
-            .align_y(Alignment::Center)
-            .padding(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_card)),
-            border: iced::Border {
-                radius: 8.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_accounts_section(&self) -> Element<'_, SettingsMessage> {
-        let p = theme::palette();
-
-        if self.settings.accounts.is_empty() {
-            return container(text("No accounts added yet").size(12).color(p.text_muted))
-                .padding(14)
-                .into();
-        }
-
-        let mut col = column![].spacing(8);
-
-        for account in &self.settings.accounts {
-            col = col.push(self.view_account_item(account));
-        }
-
-        col.into()
-    }
-
-    fn view_account_item(&self, account: &StoredAccount) -> Element<'static, SettingsMessage> {
-        let p = theme::palette();
-        let icon_theme = self.settings.icon_theme;
-        let status_color = if account.is_active {
-            p.accent_success
-        } else {
-            p.text_muted
-        };
-
-        let status_text = if account.is_active { "Active" } else { "" };
-        let username = account.username.clone();
-        let username_for_button = account.username.clone();
-
-        container(
-            row![
-                icons::icon_user(14.0, p.text_secondary, icon_theme),
-                Space::new().width(8),
-                text(username).size(13).color(p.text_primary),
-                Space::new().width(8),
-                text(status_text).size(10).color(status_color),
-                Space::new().width(Fill),
-                button(icons::icon_trash(14.0, p.text_muted, icon_theme))
-                    .style(theme::ghost_button)
-                    .padding(6)
-                    .on_press(SettingsMessage::RemoveAccount(username_for_button)),
-            ]
-            .align_y(Alignment::Center)
-            .padding(14),
-        )
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(p.bg_card)),
-            border: iced::Border {
-                radius: 8.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-}
-
-// Display impl for pick_list
-impl std::fmt::Display for AppTheme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Light => "Light",
-                Self::Steam => "Steam Dark",
-                Self::GtkDark => "GTK Adwaita",
-                Self::Windows11 => "Windows 11",
-                Self::MacOS => "macOS",
-                Self::HighContrast => "High Contrast",
-            }
-        )
     }
 }

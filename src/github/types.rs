@@ -113,25 +113,49 @@ pub enum NotificationReason {
 }
 
 impl NotificationReason {
+    pub const ALL: &'static [Self] = &[
+        Self::ApprovalRequested,
+        Self::Assign,
+        Self::Author,
+        Self::CiActivity,
+        Self::Comment,
+        Self::Invitation,
+        Self::Manual,
+        Self::MemberFeatureRequested,
+        Self::Mention,
+        Self::ReviewRequested,
+        Self::SecurityAdvisoryCredit,
+        Self::SecurityAlert,
+        Self::StateChange,
+        Self::Subscribed,
+        Self::TeamMention,
+    ];
+
     pub fn label(&self) -> &'static str {
         match self {
-            Self::ApprovalRequested => "approval requested",
-            Self::Assign => "assigned",
-            Self::Author => "author",
-            Self::CiActivity => "CI activity",
-            Self::Comment => "commented",
-            Self::Invitation => "invited",
-            Self::Manual => "subscribed",
-            Self::MemberFeatureRequested => "feature requested",
-            Self::Mention => "mentioned",
-            Self::ReviewRequested => "review requested",
-            Self::SecurityAdvisoryCredit => "security credit",
-            Self::SecurityAlert => "security",
-            Self::StateChange => "state changed",
-            Self::Subscribed => "watching",
-            Self::TeamMention => "team mentioned",
-            Self::Unknown => "notification",
+            Self::ApprovalRequested => "Approval Requested",
+            Self::Assign => "Assigned",
+            Self::Author => "Author",
+            Self::CiActivity => "CI Activity",
+            Self::Comment => "Commented",
+            Self::Invitation => "Invited",
+            Self::Manual => "Subscribed",
+            Self::MemberFeatureRequested => "Feature Requested",
+            Self::Mention => "Mentioned",
+            Self::ReviewRequested => "Review Requested",
+            Self::SecurityAdvisoryCredit => "Security Credit",
+            Self::SecurityAlert => "Security Alert",
+            Self::StateChange => "State Change",
+            Self::Subscribed => "Watching",
+            Self::TeamMention => "Team Mention",
+            Self::Unknown => "Notification",
         }
+    }
+}
+
+impl std::fmt::Display for NotificationReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
     }
 }
 

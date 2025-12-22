@@ -4,13 +4,17 @@
 //! GitTop - A beautiful native GitHub notification manager
 //! No browser engine required. Pure Rust. Pure performance.
 
+mod cache;
 mod github;
 mod platform;
+
 mod settings;
 mod tray;
 mod ui;
 
-use iced::{application, Font, Size};
+use iced::window::Position;
+use iced::{application, Font, Point, Size};
+use settings::AppSettings;
 use single_instance::SingleInstance;
 use ui::App;
 
@@ -34,11 +38,20 @@ fn main() -> iced::Result {
     // The tray must be kept alive for the duration of the app
     let _tray = tray::TrayManager::new().ok();
 
+    // Load settings to restore window state
+    let settings = AppSettings::load();
+    let window_size = Size::new(settings.window_width, settings.window_height);
+    let window_position = match (settings.window_x, settings.window_y) {
+        (Some(x), Some(y)) => Position::Specific(Point::new(x as f32, y as f32)),
+        _ => Position::Centered,
+    };
+
     application(App::new, App::update, App::view)
         .title(|app: &App| app.title())
         .theme(|app: &App| app.theme())
         .subscription(App::subscription)
-        .window_size(Size::new(800.0, 640.0))
+        .window_size(window_size)
+        .position(window_position)
         .antialiasing(true)
         .default_font(Font::DEFAULT)
         .exit_on_close_request(false)

@@ -40,6 +40,19 @@ impl Default for AppTheme {
     }
 }
 
+impl std::fmt::Display for AppTheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Light => write!(f, "Light"),
+            Self::Steam => write!(f, "Steam"),
+            Self::GtkDark => write!(f, "GTK Dark"),
+            Self::Windows11 => write!(f, "Windows 11"),
+            Self::MacOS => write!(f, "macOS"),
+            Self::HighContrast => write!(f, "High Contrast"),
+        }
+    }
+}
+
 impl AppTheme {
     /// Returns the best theme for the current platform.
     pub fn platform_default() -> Self {
@@ -108,9 +121,33 @@ pub struct AppSettings {
     /// Whether closing the window minimizes to tray instead of quitting.
     #[serde(default = "default_minimize_to_tray")]
     pub minimize_to_tray: bool,
-    /// Font scale for notifications and sidebar (1.0 = default, range 0.8-1.5)
+    /// Font scale for notification items (1.0 = default, range 0.8-1.5)
     #[serde(default = "default_font_scale")]
-    pub font_scale: f32,
+    pub notification_font_scale: f32,
+    /// Font scale for sidebar (1.0 = default, range 0.8-1.5)
+    #[serde(default = "default_font_scale")]
+    pub sidebar_font_scale: f32,
+    /// Sidebar width in pixels (180-400, default 220)
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
+    /// Window X position (None = center on screen)
+    #[serde(default)]
+    pub window_x: Option<i32>,
+    /// Window Y position (None = center on screen)
+    #[serde(default)]
+    pub window_y: Option<i32>,
+    /// Window width in pixels
+    #[serde(default = "default_window_width")]
+    pub window_width: f32,
+    /// Window height in pixels
+    #[serde(default = "default_window_height")]
+    pub window_height: f32,
+    /// Enable "Power Mode" (Enterprise Layout)
+    #[serde(default = "default_power_mode")]
+    pub power_mode: bool,
+    /// Show the details panel in Power Mode
+    #[serde(default = "default_show_details_panel")]
+    pub show_details_panel: bool,
 }
 
 fn default_minimize_to_tray() -> bool {
@@ -121,6 +158,26 @@ fn default_font_scale() -> f32 {
     1.0
 }
 
+fn default_sidebar_width() -> f32 {
+    220.0
+}
+
+fn default_window_width() -> f32 {
+    800.0
+}
+
+fn default_window_height() -> f32 {
+    640.0
+}
+
+fn default_power_mode() -> bool {
+    false
+}
+
+fn default_show_details_panel() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -128,7 +185,15 @@ impl Default for AppSettings {
             theme: AppTheme::default(),
             accounts: Vec::new(),
             minimize_to_tray: true,
-            font_scale: 1.0,
+            notification_font_scale: 1.0,
+            sidebar_font_scale: 1.0,
+            sidebar_width: 220.0,
+            window_x: None,
+            window_y: None,
+            window_width: 800.0,
+            window_height: 640.0,
+            power_mode: false,
+            show_details_panel: true,
         }
     }
 }

@@ -5,7 +5,7 @@
 //! - Main: Content header + notification list
 
 use iced::widget::{button, column, container, row, scrollable, text, Space};
-use iced::{Alignment, Element, Fill, Task};
+use iced::{Alignment, Color, Element, Fill, Task};
 
 use crate::github::{GitHubClient, GitHubError, NotificationView, SubjectType, UserInfo};
 use crate::settings::IconTheme;
@@ -65,6 +65,11 @@ pub enum NotificationMessage {
     MuteThreadComplete(String, Result<(), GitHubError>),
     // Navigation
     OpenSettings,
+    OpenRuleEngine,
+    // Account switching (handled by app.rs)
+    // Account switching (handled by app.rs)
+    SwitchAccount(String),
+    TogglePowerMode,
 }
 
 impl NotificationsScreen {
@@ -93,6 +98,13 @@ impl NotificationsScreen {
             async move { client.get_notification_views(show_all).await },
             NotificationMessage::RefreshComplete,
         )
+    }
+
+    /// Collapse all groups to reset view state (e.g. when switching modes).
+    pub fn collapse_all_groups(&mut self) {
+        for group in &mut self.groups {
+            group.is_expanded = false;
+        }
     }
 
     fn rebuild_groups(&mut self) {
@@ -176,6 +188,7 @@ impl NotificationsScreen {
 
     pub fn update(&mut self, message: NotificationMessage) -> Task<NotificationMessage> {
         match message {
+            NotificationMessage::TogglePowerMode => Task::none(), // Handled by app.rs
             NotificationMessage::Refresh => {
                 self.is_loading = true;
                 self.error_message = None;
@@ -257,20 +270,23 @@ impl NotificationsScreen {
                 Task::none()
             }
             NotificationMessage::MarkAllAsRead => {
+                // Optimistic update: immediately mark all as read in UI
+                for notif in &mut self.all_notifications {
+                    notif.unread = false;
+                }
+                self.rebuild_groups();
+
+                // Fire API call in background
                 let client = self.client.clone();
                 Task::perform(
                     async move { client.mark_all_as_read().await },
                     NotificationMessage::MarkAllAsReadComplete,
                 )
             }
-            NotificationMessage::MarkAllAsReadComplete(result) => {
-                if result.is_ok() {
-                    for notif in &mut self.all_notifications {
-                        notif.unread = false;
-                    }
-                    self.rebuild_groups();
-                }
-                Task::none()
+            NotificationMessage::MarkAllAsReadComplete(_result) => {
+                // Resync from API
+                self.is_loading = true;
+                self.fetch_notifications()
             }
             NotificationMessage::ToggleShowAll => {
                 self.filters.show_all = !self.filters.show_all;
@@ -330,36 +346,65 @@ impl NotificationsScreen {
                 // Handled by parent (app.rs)
                 Task::none()
             }
+            NotificationMessage::OpenRuleEngine => {
+                // Handled by parent (app.rs)
+                Task::none()
+            }
+            NotificationMessage::SwitchAccount(_) => {
+                // Handled by parent (app.rs)
+                Task::none()
+            }
         }
     }
 
-    pub fn view(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
+    pub fn view(
+        &self,
+        accounts: &[String],
+        icon_theme: IconTheme,
+        sidebar_width: f32,
+        power_mode: bool,
+    ) -> Element<'_, NotificationMessage> {
         row![
             // Sidebar
             view_sidebar(
                 &self.user,
+                accounts,
                 &self.type_counts,
                 &self.repo_counts,
                 self.filters.selected_type,
                 self.filters.selected_repo.as_deref(),
                 self.all_notifications.len(),
                 icon_theme,
+                sidebar_width,
+                power_mode,
             ),
             // Main content area
-            self.view_main_content(icon_theme)
+            self.view_main_content(icon_theme, power_mode)
         ]
         .height(Fill)
         .into()
     }
 
-    fn view_main_content(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
-        column![
-            self.view_content_header(icon_theme),
-            self.view_content(icon_theme)
-        ]
-        .width(Fill)
-        .height(Fill)
-        .into()
+    fn view_main_content(
+        &self,
+        icon_theme: IconTheme,
+        power_mode: bool,
+    ) -> Element<'_, NotificationMessage> {
+        if power_mode {
+            // In power mode, header controls are in top bar
+            column![self.view_content(icon_theme, power_mode)]
+                .width(Fill)
+                .height(Fill)
+                .into()
+        } else {
+            column![
+                self.view_content_header(icon_theme),
+                self.view_content(icon_theme, power_mode)
+            ]
+            .width(Fill)
+            .height(Fill)
+            .into()
+        }
     }
 
     fn view_content_header(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
@@ -390,45 +435,155 @@ impl NotificationsScreen {
             .into()
         };
 
-        let filter_btn = button(
-            text(if self.filters.show_all {
-                "All"
+        // Segmented control for filter selection (Unread | All)
+        // Clear visual indication of current state, scales for future filters
+        let is_unread_filter = !self.filters.show_all;
+
+        let unread_btn = button(text("Unread").size(12).color(if is_unread_filter {
+            p.text_primary
+        } else {
+            p.text_secondary
+        }))
+        .style(move |_theme, status| {
+            let base_bg = if is_unread_filter {
+                p.bg_active
             } else {
-                "Unread"
-            })
-            .size(12),
-        )
-        .style(theme::secondary_button)
-        .padding([6, 10])
+                Color::TRANSPARENT
+            };
+            let bg = match status {
+                button::Status::Hovered if !is_unread_filter => p.bg_hover,
+                button::Status::Pressed => p.bg_active,
+                _ => base_bg,
+            };
+            button::Style {
+                background: Some(iced::Background::Color(bg)),
+                text_color: if is_unread_filter {
+                    p.text_primary
+                } else {
+                    p.text_secondary
+                },
+                border: iced::Border {
+                    radius: 0.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .padding([6, 12])
         .on_press(NotificationMessage::ToggleShowAll);
 
+        let all_btn = button(text("All").size(12).color(if !is_unread_filter {
+            p.text_primary
+        } else {
+            p.text_secondary
+        }))
+        .style(move |_theme, status| {
+            let base_bg = if !is_unread_filter {
+                p.bg_active
+            } else {
+                Color::TRANSPARENT
+            };
+            let bg = match status {
+                button::Status::Hovered if is_unread_filter => p.bg_hover,
+                button::Status::Pressed => p.bg_active,
+                _ => base_bg,
+            };
+            button::Style {
+                background: Some(iced::Background::Color(bg)),
+                text_color: if !is_unread_filter {
+                    p.text_primary
+                } else {
+                    p.text_secondary
+                },
+                border: iced::Border {
+                    radius: 0.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .padding([6, 12])
+        .on_press(NotificationMessage::ToggleShowAll);
+
+        // Wrap in container with border
+        let filter_segment =
+            container(row![unread_btn, all_btn].spacing(0)).style(move |_| container::Style {
+                background: Some(iced::Background::Color(p.bg_control)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    color: p.border_subtle,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+
+        // Mark all read button with improved styling
         let mark_all_btn = if unread_count > 0 {
             button(
                 row![
-                    icons::icon_check(11.0, p.text_secondary, icon_theme),
-                    Space::new().width(4),
-                    text("Mark all read").size(12),
+                    icons::icon_check(12.0, p.accent, icon_theme),
+                    Space::new().width(6),
+                    text("Mark all read").size(12).color(p.text_primary),
                 ]
                 .align_y(Alignment::Center),
             )
-            .style(theme::ghost_button)
+            .style(move |_theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => p.bg_hover,
+                    button::Status::Pressed => p.bg_active,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(iced::Background::Color(bg)),
+                    text_color: p.text_primary,
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
             .padding([6, 10])
             .on_press(NotificationMessage::MarkAllAsRead)
         } else {
             button(
                 row![
-                    icons::icon_check(11.0, p.text_muted, icon_theme),
-                    Space::new().width(4),
+                    icons::icon_check(12.0, p.text_muted, icon_theme),
+                    Space::new().width(6),
                     text("Mark all read").size(12).color(p.text_muted),
                 ]
                 .align_y(Alignment::Center),
             )
-            .style(theme::ghost_button)
+            .style(move |_theme, _status| button::Style {
+                background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                text_color: p.text_muted,
+                border: iced::Border {
+                    radius: 6.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .padding([6, 10])
         };
 
+        // Refresh button with subtle styling
         let refresh_btn = button(icons::icon_refresh(14.0, p.text_secondary, icon_theme))
-            .style(theme::ghost_button)
+            .style(move |_theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => p.bg_hover,
+                    button::Status::Pressed => p.bg_active,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(iced::Background::Color(bg)),
+                    text_color: p.text_secondary,
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
             .padding(8)
             .on_press(NotificationMessage::Refresh);
 
@@ -437,22 +592,35 @@ impl NotificationsScreen {
             Space::new().width(12),
             sync_status,
             Space::new().width(Fill),
-            filter_btn,
-            Space::new().width(6),
+            filter_segment,
+            Space::new().width(12),
             mark_all_btn,
-            Space::new().width(6),
+            Space::new().width(4),
             refresh_btn,
         ]
         .align_y(Alignment::Center)
         .padding([14, 16]);
 
+        // Header with subtle bottom border for visual separation
         container(header_row)
             .width(Fill)
-            .style(theme::header)
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(p.bg_card)),
+                border: iced::Border {
+                    color: p.border_subtle,
+                    width: 0.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            })
             .into()
     }
 
-    fn view_content(&self, icon_theme: IconTheme) -> Element<'_, NotificationMessage> {
+    fn view_content(
+        &self,
+        icon_theme: IconTheme,
+        power_mode: bool,
+    ) -> Element<'_, NotificationMessage> {
         if self.is_loading && self.all_notifications.is_empty() {
             return view_loading();
         }
@@ -476,7 +644,7 @@ impl NotificationsScreen {
             content = content.push(view_group_header(group, group_idx, icon_theme));
 
             if group.is_expanded {
-                content = content.push(view_group_items(group, icon_theme));
+                content = content.push(view_group_items(group, icon_theme, power_mode));
             }
 
             content = content.push(Space::new().height(8));

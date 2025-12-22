@@ -70,6 +70,10 @@ pub fn apply_filters(
     notifications
         .iter()
         .filter(|n| {
+            // If not showing all, only show unread notifications
+            if !filters.show_all && !n.unread {
+                return false;
+            }
             // Filter by subject type if specified
             if let Some(ref selected_type) = filters.selected_type {
                 if &n.subject_type != selected_type {

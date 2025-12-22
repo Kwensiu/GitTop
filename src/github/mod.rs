@@ -2,8 +2,12 @@
 
 pub mod auth;
 pub mod client;
+pub mod keyring;
+pub mod session;
 pub mod types;
 
 pub use auth::AuthManager;
 pub use client::{GitHubClient, GitHubError};
+pub use keyring::AccountKeyring;
+pub use session::{Session, SessionError, SessionManager};
 pub use types::*;

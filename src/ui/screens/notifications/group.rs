@@ -46,12 +46,15 @@ pub fn view_group_header<'a>(
 pub fn view_group_items<'a>(
     group: &'a NotificationGroup,
     icon_theme: IconTheme,
+    dense: bool,
 ) -> Element<'a, NotificationMessage> {
     let items = group
         .notifications
         .iter()
         .enumerate()
-        .map(|(idx, n)| (idx, notification_item(n, icon_theme)));
+        .map(|(idx, n)| (idx, notification_item(n, icon_theme, dense)));
 
-    keyed_column(items).spacing(4).into()
+    keyed_column(items)
+        .spacing(if dense { 0 } else { 4 }) // No spacing in dense mode for list feel
+        .into()
 }

@@ -269,3 +269,103 @@ pub fn icon_trash<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Elem
         IconTheme::Emoji => emoji_icon("🗑", size as u32, color).into(),
     }
 }
+
+/// Palette/appearance icon.
+pub fn icon_palette<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuPalette, size, color).into(),
+        IconTheme::Emoji => emoji_icon("🎨", size as u32, color).into(),
+    }
+}
+
+/// Bell/notification icon.
+pub fn icon_notification<M: 'static>(
+    size: f32,
+    color: Color,
+    theme: IconTheme,
+) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuBell, size, color).into(),
+        IconTheme::Emoji => emoji_icon("🔔", size as u32, color).into(),
+    }
+}
+
+/// Filter icon.
+pub fn icon_filter<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuSlidersHorizontal, size, color).into(),
+        IconTheme::Emoji => emoji_icon("⚙", size as u32, color).into(),
+    }
+}
+
+/// External link icon.
+pub fn icon_external_link<M: 'static>(
+    size: f32,
+    color: Color,
+    theme: IconTheme,
+) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuExternalLink, size, color).into(),
+        IconTheme::Emoji => emoji_icon("↗", size as u32, color).into(),
+    }
+}
+
+/// Clock icon.
+pub fn icon_clock<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuClock, size, color).into(),
+        IconTheme::Emoji => emoji_icon("🕐", size as u32, color).into(),
+    }
+}
+
+/// Calendar icon.
+pub fn icon_calendar<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuCalendar, size, color).into(),
+        IconTheme::Emoji => emoji_icon("📅", size as u32, color).into(),
+    }
+}
+
+/// Building icon.
+pub fn icon_building<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuBuilding, size, color).into(),
+        IconTheme::Emoji => emoji_icon("🏢", size as u32, color).into(),
+    }
+}
+
+/// Tag icon.
+pub fn icon_tag<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuTag, size, color).into(),
+        IconTheme::Emoji => emoji_icon("🏷", size as u32, color).into(),
+    }
+}
+
+/// Chart/dashboard icon.
+pub fn icon_chart<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuLayoutDashboard, size, color).into(),
+        IconTheme::Emoji => emoji_icon("📊", size as u32, color).into(),
+    }
+}
+
+/// Inbox empty icon.
+pub fn icon_inbox_empty<M: 'static>(
+    size: f32,
+    color: Color,
+    theme: IconTheme,
+) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuArchive, size, color).into(),
+        IconTheme::Emoji => emoji_icon("📭", size as u32, color).into(),
+    }
+}
+
+/// Plus/add icon.
+pub fn icon_plus<M: 'static>(size: f32, color: Color, theme: IconTheme) -> Element<'static, M> {
+    match theme {
+        IconTheme::Svg => icon_colored(&icondata_lu::LuPlus, size, color).into(),
+        IconTheme::Emoji => emoji_icon("+", size as u32, color).into(),
+    }
+}
