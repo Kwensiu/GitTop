@@ -1,7 +1,16 @@
 //! Notification screen helpers - grouping, filtering, URL conversion.
+//!
+//! Architecture Notes:
+//! - `ProcessedNotification` and `NotificationGroup`: Data structures for processed data
+//! - `FilterSettings`: UI filter state
+//! - `group_processed_notifications`: Presentation logic (time-based grouping)
+//! - `apply_filters`, `count_by_type`, `count_by_repo`: Pure data transformations
+//!
+//! For rule evaluation, use `NotificationEngine` from `engine.rs` instead of
+//! the legacy `process_with_rules` function.
 
 use crate::github::{NotificationView, SubjectType};
-use crate::ui::screens::settings::rule_engine::{NotificationRuleSet, RuleAction, RuleEngine};
+use crate::ui::screens::settings::rule_engine::RuleAction;
 use chrono::Local;
 use std::collections::HashMap;
 
@@ -31,52 +40,6 @@ pub struct FilterSettings {
     pub selected_type: Option<SubjectType>,
     /// Filter by specific repository (None = show all).
     pub selected_repo: Option<String>,
-}
-
-/// Process notifications through the rule engine.
-/// Returns processed notifications with their actions, filtering out hidden ones.
-pub fn process_with_rules(
-    notifications: &[NotificationView],
-    rules: &NotificationRuleSet,
-) -> Vec<ProcessedNotification> {
-    if !rules.enabled {
-        // No rules active - all notifications are shown normally
-        return notifications
-            .iter()
-            .map(|n| ProcessedNotification {
-                notification: n.clone(),
-                action: RuleAction::Show,
-            })
-            .collect();
-    }
-
-    let engine = RuleEngine::new(rules.clone());
-    let now = Local::now();
-
-    notifications
-        .iter()
-        .filter_map(|n| {
-            // Use the reason's label for matching (e.g., "Mentioned", "Commented")
-            // This matches what the rule editor UI shows/saves
-            let reason_label = n.reason.label();
-            let (action, _decision) = engine.evaluate_detailed(
-                reason_label,
-                Some(n.repo_owner()),
-                Some(&n.account),
-                &now,
-            );
-
-            // Filter out hidden notifications
-            if action == RuleAction::Hide {
-                None
-            } else {
-                Some(ProcessedNotification {
-                    notification: n.clone(),
-                    action,
-                })
-            }
-        })
-        .collect()
 }
 
 /// Group processed notifications by time period (Today, This Week, Older).

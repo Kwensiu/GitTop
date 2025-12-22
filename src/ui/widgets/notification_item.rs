@@ -1,4 +1,12 @@
 //! Notification item widget - displays a single notification.
+//!
+//! Architecture:
+//! - `NotificationVisualState`: Single source of truth for ALL visual decisions
+//!   - Subject colors (Issue=green, PR=blue, etc.)
+//!   - Card styling (background, border, accent bar)
+//!   - State indicators (priority, silent)
+//! - Widget builders: `account_badge()`, `priority_indicator()`, `silent_indicator()`
+//! - `notification_item()`: Coordinates layout using the visual state
 
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Color, Element, Fill};
@@ -10,42 +18,221 @@ use crate::ui::screens::notifications::NotificationMessage;
 use crate::ui::screens::settings::rule_engine::RuleAction;
 use crate::ui::{icons, theme};
 
-/// Get color for subject type
-fn get_subject_color(subject_type: SubjectType) -> Color {
-    let p = theme::palette();
-    match subject_type {
-        SubjectType::Issue => p.accent_success,
-        SubjectType::PullRequest => p.accent,
-        SubjectType::Release => p.accent_purple,
-        SubjectType::Discussion => p.accent,
-        SubjectType::CheckSuite => p.accent_warning,
-        SubjectType::RepositoryVulnerabilityAlert => p.accent_danger,
-        _ => p.text_secondary,
-    }
+// ============================================================================
+// Visual State - Single Source of Truth
+// ============================================================================
+
+/// Centralized visual decisions for a notification.
+/// 
+/// This is the SINGLE SOURCE OF TRUTH for all visual properties:
+/// - Subject type colors (consistent across all usages)
+/// - Card styling (background, border, accent bar)
+/// - State indicators (priority, silent, unread)
+/// 
+/// By computing everything in one place, we guarantee:
+/// 1. Consistent colors between icon and accent bar
+/// 2. No scattered color logic throughout the codebase
+/// 3. Easy modification of visual rules in one location
+pub struct NotificationVisualState {
+    /// True if this is a priority notification in the priority group
+    pub is_priority: bool,
+    /// True if this notification has Silent action
+    pub is_silent: bool,
+    /// True if notification is unread
+    pub is_unread: bool,
+    /// The subject type color (Issue=green, PR=blue, etc.)
+    pub subject_color: Color,
+    /// Accent bar color (left edge of card)
+    pub bar_color: Color,
+    /// Card background color
+    pub card_bg: Color,
+    /// Card border color
+    pub border_color: Color,
+    /// Whether to show the border
+    pub show_border: bool,
 }
 
-/// Get the icon for a subject type.
-fn subject_type_icon(
-    subject_type: SubjectType,
-    icon_theme: IconTheme,
-) -> Element<'static, NotificationMessage> {
-    let color = get_subject_color(subject_type);
-    let icon_size = theme::notification_scaled(14.0);
-    match subject_type {
-        SubjectType::Issue => icons::icon_issue(icon_size, color, icon_theme),
-        SubjectType::PullRequest => icons::icon_pull_request(icon_size, color, icon_theme),
-        SubjectType::Release => icons::icon_release(icon_size, color, icon_theme),
-        SubjectType::Discussion => icons::icon_discussion(icon_size, color, icon_theme),
-        SubjectType::CheckSuite => icons::icon_check_suite(icon_size, color, icon_theme),
-        SubjectType::Commit => icons::icon_commit(icon_size, color, icon_theme),
-        SubjectType::RepositoryVulnerabilityAlert => {
-            icons::icon_security(icon_size, color, icon_theme)
+impl NotificationVisualState {
+    /// Compute complete visual state from notification data.
+    /// 
+    /// This method encapsulates ALL visual logic, ensuring consistency
+    /// between the subject icon, accent bar, card styling, and indicators.
+    pub fn compute(
+        is_unread: bool,
+        subject_type: SubjectType,
+        action: RuleAction,
+        is_priority_group: bool,
+    ) -> Self {
+        let p = theme::palette();
+        
+        // Subject color is the foundation - used for icons, bars, and tints
+        let subject_color = Self::color_for_subject_type(subject_type);
+
+        // Priority styling only applies when in the priority group
+        let is_priority = is_priority_group && action == RuleAction::Priority;
+        let is_silent = action == RuleAction::Silent;
+
+        // Bar color: priority gets warning, unread gets subject color, read gets transparent
+        let bar_color = if is_priority {
+            p.accent_warning
+        } else if is_unread {
+            subject_color
+        } else {
+            Color::TRANSPARENT
+        };
+
+        // Card background: subtle tint for priority/unread
+        let card_bg = if is_priority {
+            Color::from_rgba(
+                p.accent_warning.r,
+                p.accent_warning.g,
+                p.accent_warning.b,
+                0.08,
+            )
+        } else if is_unread {
+            Color::from_rgba(subject_color.r, subject_color.g, subject_color.b, 0.05)
+        } else {
+            Color::TRANSPARENT
+        };
+
+        // Border color: stronger tint for priority/unread
+        let border_color = if is_priority {
+            Color::from_rgba(
+                p.accent_warning.r,
+                p.accent_warning.g,
+                p.accent_warning.b,
+                0.2,
+            )
+        } else if is_unread {
+            Color::from_rgba(subject_color.r, subject_color.g, subject_color.b, 0.12)
+        } else {
+            Color::TRANSPARENT
+        };
+
+        let show_border = is_priority || is_unread;
+
+        Self {
+            is_priority,
+            is_silent,
+            is_unread,
+            subject_color,
+            bar_color,
+            card_bg,
+            border_color,
+            show_border,
         }
-        SubjectType::Unknown => icons::icon_unknown(icon_size, color, icon_theme),
+    }
+
+    /// Get the canonical color for a subject type.
+    /// 
+    /// This is the single definition of subject type colors, ensuring
+    /// consistency between icons, accent bars, and any other usage.
+    #[inline]
+    pub fn color_for_subject_type(subject_type: SubjectType) -> Color {
+        let p = theme::palette();
+        match subject_type {
+            SubjectType::Issue => p.accent_success,          // Green
+            SubjectType::PullRequest => p.accent,            // Blue
+            SubjectType::Release => p.accent_purple,         // Purple
+            SubjectType::Discussion => p.accent,             // Blue
+            SubjectType::CheckSuite => p.accent_warning,     // Yellow/Orange
+            SubjectType::RepositoryVulnerabilityAlert => p.accent_danger, // Red
+            SubjectType::Commit => p.text_secondary,         // Muted
+            SubjectType::Unknown => p.text_secondary,        // Muted
+        }
+    }
+
+    /// Get the icon for a subject type with the correct color.
+    /// 
+    /// Uses `color_for_subject_type` internally to guarantee consistency.
+    /// This is a static method for cases where you don't have a visual state instance.
+    #[allow(dead_code)] // Public API for external use
+    pub fn icon_for_subject_type(
+        subject_type: SubjectType,
+        icon_theme: IconTheme,
+    ) -> Element<'static, NotificationMessage> {
+        let color = Self::color_for_subject_type(subject_type);
+        Self::build_icon(subject_type, color, icon_theme)
+    }
+
+    /// Get the icon for a subject type using the pre-computed subject_color.
+    /// 
+    /// This uses the already-computed `subject_color` from the visual state,
+    /// avoiding redundant color lookups and ensuring consistency.
+    pub fn icon_for_subject_type_with_color(
+        &self,
+        subject_type: SubjectType,
+        icon_theme: IconTheme,
+    ) -> Element<'static, NotificationMessage> {
+        Self::build_icon(subject_type, self.subject_color, icon_theme)
+    }
+
+    /// Internal helper to build the icon element.
+    fn build_icon(
+        subject_type: SubjectType,
+        color: Color,
+        icon_theme: IconTheme,
+    ) -> Element<'static, NotificationMessage> {
+        let icon_size = theme::notification_scaled(14.0);
+        
+        match subject_type {
+            SubjectType::Issue => icons::icon_issue(icon_size, color, icon_theme),
+            SubjectType::PullRequest => icons::icon_pull_request(icon_size, color, icon_theme),
+            SubjectType::Release => icons::icon_release(icon_size, color, icon_theme),
+            SubjectType::Discussion => icons::icon_discussion(icon_size, color, icon_theme),
+            SubjectType::CheckSuite => icons::icon_check_suite(icon_size, color, icon_theme),
+            SubjectType::Commit => icons::icon_commit(icon_size, color, icon_theme),
+            SubjectType::RepositoryVulnerabilityAlert => {
+                icons::icon_security(icon_size, color, icon_theme)
+            }
+            SubjectType::Unknown => icons::icon_unknown(icon_size, color, icon_theme),
+        }
     }
 }
 
-/// Creates a notification item widget
+// ============================================================================
+// Reusable Widget Builders
+// ============================================================================
+
+/// Creates an account badge widget (e.g., "@username").
+fn account_badge(account: &str, size: f32) -> Element<'_, NotificationMessage> {
+    let p = theme::palette();
+    container(text(format!("@{}", account)).size(size).color(p.text_muted))
+        .padding([2, 6])
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(Color::from_rgba(
+                p.text_muted.r,
+                p.text_muted.g,
+                p.text_muted.b,
+                0.1,
+            ))),
+            border: iced::Border {
+                radius: 4.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// Creates a priority indicator widget (⚡).
+fn priority_indicator(size: f32) -> Element<'static, NotificationMessage> {
+    container(text("⚡").size(size)).padding([0, 4]).into()
+}
+
+/// Creates a silent/muted indicator widget (🔕).
+fn silent_indicator(size: f32) -> Element<'static, NotificationMessage> {
+    container(text("🔕").size(size)).padding([2, 4]).into()
+}
+
+// ============================================================================
+// Main Widget
+// ============================================================================
+
+/// Creates a notification item widget.
+///
+/// Uses `NotificationVisualState` as the single source of truth for all
+/// visual decisions, ensuring consistency between icons, colors, and styling.
 pub fn notification_item(
     processed: &ProcessedNotification,
     icon_theme: IconTheme,
@@ -53,184 +240,36 @@ pub fn notification_item(
     is_priority_group: bool,
 ) -> Element<'_, NotificationMessage> {
     let notif = &processed.notification;
-    let action = processed.action;
     let p = theme::palette();
 
-    // Only apply priority styling if we're in the priority group
-    // (in "All" mode, is_priority_group will be false even for priority notifications)
-    let show_priority_style = is_priority_group && action == RuleAction::Priority;
+    // Compute all visual decisions upfront (single source of truth)
+    let visual = NotificationVisualState::compute(
+        notif.unread,
+        notif.subject_type,
+        processed.action,
+        is_priority_group,
+    );
 
-    // Priority notifications use warning color, others use subject-type color
-    let type_color = if show_priority_style {
-        p.accent_warning
-    } else {
-        get_subject_color(notif.subject_type)
-    };
-    let is_unread = notif.unread;
+    // Get subject icon using the visual state's color (guaranteed consistency)
+    let subject_icon = visual.icon_for_subject_type_with_color(notif.subject_type, icon_theme);
 
     // --- SIZING & SPACING ---
-    let padding_y = if dense { 8.0 } else { 14.0 };
-    let padding_x = if dense { 12.0 } else { 16.0 };
-    let content_spacing = if dense { 2.0 } else { 6.0 };
-    let row_spacing = 8.0;
-
-    // Title row
-    // In dense mode, title is slightly smaller or just cleaner
-    let title_size = theme::notification_scaled(if dense { 13.0 } else { 14.0 });
-    let meta_size = theme::notification_scaled(12.0);
-    let reason_size = theme::notification_scaled(11.0);
-    let account_size = theme::notification_scaled(10.0);
-
-    let title = text(&notif.title).size(title_size).color(p.text_primary);
-
-    // Account badge - show which account this notification belongs to
-    let show_account_badge = !notif.account.is_empty();
-    let account_badge: Option<Element<'_, NotificationMessage>> = if show_account_badge {
-        Some(
-            container(
-                text(format!("@{}", notif.account))
-                    .size(account_size)
-                    .color(p.text_muted),
-            )
-            .padding([2, 6])
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(
-                    p.text_muted.r,
-                    p.text_muted.g,
-                    p.text_muted.b,
-                    0.1,
-                ))),
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .into(),
-        )
-    } else {
-        None
+    let metrics = LayoutMetrics {
+        title_size: theme::notification_scaled(if dense { 13.0 } else { 14.0 }),
+        meta_size: theme::notification_scaled(12.0),
+        reason_size: theme::notification_scaled(11.0),
+        account_size: theme::notification_scaled(10.0),
+        padding_x: if dense { 12.0 } else { 16.0 },
+        padding_y: if dense { 8.0 } else { 14.0 },
+        content_spacing: if dense { 2.0 } else { 6.0 },
+        row_spacing: 8.0,
     };
 
-    // Silent indicator - show muted bell for silent notifications
-    // Only relevant when rules are active (not in "All" mode where is_priority_group context indicates Unread mode)
-    let silent_indicator: Option<Element<'_, NotificationMessage>> = if action == RuleAction::Silent
-    {
-        Some(
-            container(text("🔕").size(account_size))
-                .padding([2, 4])
-                .into(),
-        )
-    } else {
-        None
-    };
-
-    // Priority indicator for priority group items (only show the ⚡ in the priority group)
-    let priority_indicator: Option<Element<'_, NotificationMessage>> = if show_priority_style {
-        Some(container(text("⚡").size(meta_size)).padding([0, 4]).into())
-    } else {
-        None
-    };
-
-    // Build meta row with account badge
-    let mut meta_row = row![
-        subject_type_icon(notif.subject_type, icon_theme),
-        Space::new().width(6),
-        text(&notif.repo_full_name)
-            .size(meta_size)
-            .color(p.text_secondary),
-        Space::new().width(8),
-        text(notif.reason.label())
-            .size(reason_size)
-            .color(p.text_muted),
-    ]
-    .align_y(Alignment::Center);
-
-    if let Some(badge) = account_badge {
-        meta_row = meta_row.push(Space::new().width(8));
-        meta_row = meta_row.push(badge);
-    }
-
-    if let Some(indicator) = silent_indicator {
-        meta_row = meta_row.push(Space::new().width(4));
-        meta_row = meta_row.push(indicator);
-    }
-
-    // Time with optional priority indicator
-    let mut time_row = row![].align_y(Alignment::Center);
-    if let Some(indicator) = priority_indicator {
-        time_row = time_row.push(indicator);
-    }
-    time_row = time_row.push(text(&notif.time_ago).size(meta_size).color(p.text_muted));
-
-    // Main content layout
+    // --- BUILD CONTENT ---
     let content = if dense {
-        // DENSE LAYOUT: Tighter spacing
-        let mut title_row = row![
-            subject_type_icon(notif.subject_type, icon_theme),
-            Space::new().width(6),
-            text(&notif.title).size(title_size).color(p.text_primary),
-        ]
-        .align_y(Alignment::Center);
-
-        // Add account badge inline for dense mode
-        if show_account_badge {
-            title_row = title_row.push(Space::new().width(8));
-            title_row = title_row.push(
-                container(
-                    text(format!("@{}", notif.account))
-                        .size(account_size)
-                        .color(p.text_muted),
-                )
-                .padding([2, 6])
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba(
-                        p.text_muted.r,
-                        p.text_muted.g,
-                        p.text_muted.b,
-                        0.1,
-                    ))),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }),
-            );
-        }
-
-        row![
-            column![
-                title_row,
-                row![
-                    text(&notif.repo_full_name)
-                        .size(meta_size)
-                        .color(p.text_secondary),
-                    Space::new().width(8),
-                    text(notif.reason.label())
-                        .size(reason_size)
-                        .color(p.text_muted),
-                ]
-                .align_y(Alignment::Center)
-                .padding([0, 20]) // Indent meta slightly
-            ]
-            .spacing(2)
-            .width(Fill),
-            container(time_row).padding([0, 8]),
-        ]
-        .align_y(Alignment::Center)
-        .padding([padding_y, padding_x])
+        build_dense_layout(notif, icon_theme, &visual, &metrics, &p)
     } else {
-        // STANDARD LAYOUT
-        row![
-            column![title, meta_row]
-                .spacing(content_spacing)
-                .width(Fill),
-            container(time_row).padding([4, 8]),
-        ]
-        .spacing(row_spacing)
-        .align_y(Alignment::Center)
-        .padding([padding_y, padding_x])
+        build_standard_layout(notif, subject_icon, &visual, &metrics, &p)
     };
 
     // Wrap in button for click handling
@@ -239,14 +278,160 @@ pub fn notification_item(
         .on_press(NotificationMessage::Open(notif.id.clone()))
         .width(Fill);
 
-    // Accent bar - priority uses warning color (only if in priority group), others use type color
-    let bar_color = if show_priority_style {
-        p.accent_warning
-    } else if is_unread {
-        type_color
-    } else {
-        Color::TRANSPARENT
-    };
+    // Build card with accent bar
+    build_card(item_button, &visual, dense)
+}
+
+// ============================================================================
+// Layout Builders
+// ============================================================================
+
+struct LayoutMetrics {
+    title_size: f32,
+    meta_size: f32,
+    reason_size: f32,
+    account_size: f32,
+    padding_x: f32,
+    padding_y: f32,
+    content_spacing: f32,
+    row_spacing: f32,
+}
+
+/// Builds the standard (non-dense) layout.
+fn build_standard_layout<'a>(
+    notif: &'a crate::github::types::NotificationView,
+    subject_icon: Element<'static, NotificationMessage>,
+    visual: &NotificationVisualState,
+    metrics: &LayoutMetrics,
+    p: &theme::ThemePalette,
+) -> iced::widget::Row<'a, NotificationMessage> {
+    // Use visual state's is_unread for title styling
+    let title_color = if visual.is_unread { p.text_primary } else { p.text_secondary };
+    let title = text(&notif.title)
+        .size(metrics.title_size)
+        .color(title_color);
+
+    // Build meta row
+    let mut meta_row = row![
+        subject_icon,
+        Space::new().width(6),
+        text(&notif.repo_full_name)
+            .size(metrics.meta_size)
+            .color(p.text_secondary),
+        Space::new().width(8),
+        text(notif.reason.label())
+            .size(metrics.reason_size)
+            .color(p.text_muted),
+    ]
+    .align_y(Alignment::Center);
+
+    // Add account badge if present
+    if !notif.account.is_empty() {
+        meta_row = meta_row.push(Space::new().width(8));
+        meta_row = meta_row.push(account_badge(&notif.account, metrics.account_size));
+    }
+
+    // Add silent indicator if applicable
+    if visual.is_silent {
+        meta_row = meta_row.push(Space::new().width(4));
+        meta_row = meta_row.push(silent_indicator(metrics.account_size));
+    }
+
+    // Build time row with optional priority indicator
+    let time_row = build_time_row(visual, &notif.time_ago, metrics.meta_size, p);
+
+    row![
+        column![title, meta_row]
+            .spacing(metrics.content_spacing)
+            .width(Fill),
+        container(time_row).padding([4, 8]),
+    ]
+    .spacing(metrics.row_spacing)
+    .align_y(Alignment::Center)
+    .padding([metrics.padding_y, metrics.padding_x])
+}
+
+/// Builds the dense layout.
+fn build_dense_layout<'a>(
+    notif: &'a crate::github::types::NotificationView,
+    icon_theme: IconTheme,
+    visual: &NotificationVisualState,
+    metrics: &LayoutMetrics,
+    p: &theme::ThemePalette,
+) -> iced::widget::Row<'a, NotificationMessage> {
+    // Use visual state's pre-computed subject_color for the icon
+    let subject_icon = visual.icon_for_subject_type_with_color(notif.subject_type, icon_theme);
+
+    // Use visual state's is_unread for title styling
+    let title_color = if visual.is_unread { p.text_primary } else { p.text_secondary };
+
+    // Title row with icon
+    let mut title_row = row![
+        subject_icon,
+        Space::new().width(6),
+        text(&notif.title)
+            .size(metrics.title_size)
+            .color(title_color),
+    ]
+    .align_y(Alignment::Center);
+
+    // Add account badge inline for dense mode
+    if !notif.account.is_empty() {
+        title_row = title_row.push(Space::new().width(8));
+        title_row = title_row.push(account_badge(&notif.account, metrics.account_size));
+    }
+
+    // Build time row with optional priority indicator
+    let time_row = build_time_row(visual, &notif.time_ago, metrics.meta_size, p);
+
+    row![
+        column![
+            title_row,
+            row![
+                text(&notif.repo_full_name)
+                    .size(metrics.meta_size)
+                    .color(p.text_secondary),
+                Space::new().width(8),
+                text(notif.reason.label())
+                    .size(metrics.reason_size)
+                    .color(p.text_muted),
+            ]
+            .align_y(Alignment::Center)
+            .padding([0, 20]) // Indent meta slightly
+        ]
+        .spacing(2)
+        .width(Fill),
+        container(time_row).padding([0, 8]),
+    ]
+    .align_y(Alignment::Center)
+    .padding([metrics.padding_y, metrics.padding_x])
+}
+
+/// Builds the time row with optional priority indicator.
+fn build_time_row<'a>(
+    visual: &NotificationVisualState,
+    time_ago: &'a str,
+    meta_size: f32,
+    p: &theme::ThemePalette,
+) -> iced::widget::Row<'a, NotificationMessage> {
+    let mut time_row = row![].align_y(Alignment::Center);
+    if visual.is_priority {
+        time_row = time_row.push(priority_indicator(meta_size));
+    }
+    time_row = time_row.push(text(time_ago).size(meta_size).color(p.text_muted));
+    time_row
+}
+
+/// Builds the card container with accent bar and styling.
+fn build_card<'a>(
+    item_button: iced::widget::Button<'a, NotificationMessage>,
+    visual: &NotificationVisualState,
+    dense: bool,
+) -> Element<'a, NotificationMessage> {
+    let bar_color = visual.bar_color;
+    let card_bg = visual.card_bg;
+    let border_color = visual.border_color;
+    let show_border = visual.show_border;
 
     let accent_bar = container(Space::new().width(3).height(Fill))
         .height(Fill)
@@ -254,35 +439,6 @@ pub fn notification_item(
             background: Some(iced::Background::Color(bar_color)),
             ..Default::default()
         });
-
-    // Card styling - priority notifications have special background (only if in priority group)
-    let card_bg = if show_priority_style {
-        Color::from_rgba(
-            p.accent_warning.r,
-            p.accent_warning.g,
-            p.accent_warning.b,
-            0.08,
-        )
-    } else if is_unread {
-        Color::from_rgba(type_color.r, type_color.g, type_color.b, 0.05)
-    } else {
-        Color::TRANSPARENT
-    };
-
-    let border_color = if show_priority_style {
-        Color::from_rgba(
-            p.accent_warning.r,
-            p.accent_warning.g,
-            p.accent_warning.b,
-            0.2,
-        )
-    } else if is_unread {
-        Color::from_rgba(type_color.r, type_color.g, type_color.b, 0.12)
-    } else {
-        Color::TRANSPARENT
-    };
-
-    let has_border = show_priority_style || is_unread;
 
     container(
         row![accent_bar, item_button]
@@ -294,7 +450,7 @@ pub fn notification_item(
         border: iced::Border {
             radius: if dense { 0.0.into() } else { 6.0.into() },
             color: border_color,
-            width: if has_border { 1.0 } else { 0.0 },
+            width: if show_border { 1.0 } else { 0.0 },
         },
         ..Default::default()
     })

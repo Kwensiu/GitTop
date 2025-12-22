@@ -3,19 +3,25 @@
 //! Layout: Sidebar | Main Content
 //! - Sidebar: Types filter, Repositories filter, User info
 //! - Main: Content header + notification list
+//!
+//! Architecture:
+//! - Uses `NotificationEngine` for centralized rule evaluation (single pass)
+//! - `rebuild_groups()` operates on already-processed notifications
+//! - `send_desktop_notifications()` uses the same processed data
 
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Color, Element, Fill, Task};
 
 use crate::github::{GitHubClient, GitHubError, NotificationView, SubjectType, UserInfo};
 use crate::settings::IconTheme;
-use crate::ui::screens::settings::rule_engine::NotificationRuleSet;
+use crate::ui::screens::settings::rule_engine::{NotificationRuleSet, RuleAction};
 use crate::ui::{icons, theme, window_state};
 
+use super::engine::{DesktopNotificationBatch, NotificationEngine};
 use super::group::{view_group_header, view_group_items};
 use super::helper::{
     api_url_to_web_url, apply_filters, count_by_repo, count_by_type, group_processed_notifications,
-    process_with_rules, FilterSettings, NotificationGroup, ProcessedNotification,
+    FilterSettings, NotificationGroup, ProcessedNotification,
 };
 use super::sidebar::view_sidebar;
 use super::states::{view_empty, view_error, view_loading};
@@ -134,8 +140,6 @@ impl NotificationsScreen {
     /// Extract priority notifications from current account and add to cross-account store.
     /// Only tracks UNREAD priority notifications.
     fn update_cross_account_priority(&mut self) {
-        use crate::ui::screens::settings::rule_engine::RuleAction;
-
         // Get unread priority notifications from current account's processed list
         let current_priority: Vec<ProcessedNotification> = self
             .processed_notifications
@@ -154,15 +158,25 @@ impl NotificationsScreen {
         self.cross_account_priority.extend(current_priority);
     }
 
+    /// Process all notifications through the rule engine (single pass).
+    /// This is called once after fetching, and the results are reused.
+    fn process_notifications(&mut self) {
+        let engine = NotificationEngine::new(self.rules.clone());
+        
+        // Apply filters first (type, repo, read status)
+        self.filtered_notifications = apply_filters(&self.all_notifications, &self.filters);
+        
+        // Process through rule engine once (applies actions, filters hidden)
+        self.processed_notifications = engine.process_all(&self.filtered_notifications);
+    }
+
     fn rebuild_groups(&mut self) {
         // Recompute cached counts from all notifications
         self.type_counts = count_by_type(&self.all_notifications);
         self.repo_counts = count_by_repo(&self.all_notifications);
-        // Apply filters (type, repo, read status)
-        self.filtered_notifications = apply_filters(&self.all_notifications, &self.filters);
-        // Process through rule engine (applies actions, filters hidden)
-        self.processed_notifications =
-            process_with_rules(&self.filtered_notifications, &self.rules);
+        
+        // Process notifications through rule engine (single pass)
+        self.process_notifications();
 
         // Update cross-account priority store with current account's priority notifications
         // (only track unread priority notifications)
@@ -205,142 +219,74 @@ impl NotificationsScreen {
 
     /// Send desktop notifications for new or updated unread notifications.
     /// Only called when window is hidden in tray.
+    /// 
+    /// Uses the already-processed notifications to avoid re-running rules.
     /// Respects rule engine: Silent/Hide actions suppress desktop notifications.
-    fn send_desktop_notifications(&self, notifications: &[NotificationView]) {
-        use crate::ui::screens::settings::rule_engine::{RuleAction, RuleEngine};
-
+    fn send_desktop_notifications(&self, processed: &[ProcessedNotification]) {
         eprintln!(
-            "[DEBUG] send_desktop_notifications called with {} notifications",
-            notifications.len()
+            "[DEBUG] send_desktop_notifications called with {} processed notifications",
+            processed.len()
         );
 
-        // Process through rule engine to determine which should trigger desktop notifications
-        let engine = RuleEngine::new(self.rules.clone());
-        let now = chrono::Local::now();
-
-        // Find new or updated unread notifications that should trigger desktop notifications
-        // A notification is "new" if:
-        // 1. We've never seen this ID before, OR
-        // 2. The updated_at timestamp is newer than what we recorded
-        // AND:
-        // 3. The rule action is Show or Priority (not Silent or Hide)
-        let new_notifications: Vec<_> = notifications
-            .iter()
-            .filter(|n| {
-                if !n.unread {
-                    return false;
-                }
-
-                // Check if notification is new/updated
-                let is_new = match self.seen_notification_timestamps.get(&n.id) {
-                    None => true,                                 // Never seen this ID
-                    Some(last_seen) => n.updated_at > *last_seen, // Updated since last seen
-                };
-
-                if !is_new {
-                    return false;
-                }
-
-                // Check rule engine for action
-                // Use the reason's label for matching (e.g., "Mentioned", "Commented")
-                let reason_label = n.reason.label();
-                let (action, _) = engine.evaluate_detailed(
-                    reason_label,
-                    Some(n.repo_owner()),
-                    Some(&n.account),
-                    &now,
-                );
-
-                // Only show desktop notification for Show and Priority actions
-                // Priority always triggers notification (that's the point!)
-                matches!(action, RuleAction::Show | RuleAction::Priority)
-            })
-            .collect();
-
-        // Separate priority notifications (they should always be prominent)
-        let priority_notifications: Vec<_> = new_notifications
-            .iter()
-            .filter(|n| {
-                let reason_label = n.reason.label();
-                let (action, _) = engine.evaluate_detailed(
-                    reason_label,
-                    Some(n.repo_owner()),
-                    Some(&n.account),
-                    &now,
-                );
-                action == RuleAction::Priority
-            })
-            .collect();
+        // Use DesktopNotificationBatch to categorize notifications (uses already-processed data)
+        let batch = DesktopNotificationBatch::from_processed(processed, &self.seen_notification_timestamps);
 
         eprintln!(
             "[DEBUG] Found {} new notifications ({} priority) (seen count: {})",
-            new_notifications.len(),
-            priority_notifications.len(),
+            batch.total_count(),
+            batch.priority.len(),
             self.seen_notification_timestamps.len()
         );
 
-        if new_notifications.is_empty() {
+        if batch.is_empty() {
             eprintln!("[DEBUG] No new notifications to show, returning");
             return;
         }
 
-        // If there are priority notifications, show them first/prominently
-        if !priority_notifications.is_empty() {
-            for notif in &priority_notifications {
-                let title = format!(
-                    "Priority: {} - {}",
-                    notif.repo_full_name, notif.subject_type
-                );
-                let url = notif.url.as_ref().map(|u| api_url_to_web_url(u));
-                let body = format!("{}\n{}", notif.title, notif.reason.label());
-                eprintln!("[DEBUG] Sending priority notification: {:?}", title);
-                crate::platform::notify(&title, &body, url.as_deref());
-            }
-            // If all notifications are priority, we're done
-            if priority_notifications.len() == new_notifications.len() {
-                return;
-            }
+        // Send priority notifications first (always shown prominently)
+        for p in &batch.priority {
+            let notif = &p.notification;
+            let title = format!(
+                "Priority: {} - {}",
+                notif.repo_full_name, notif.subject_type
+            );
+            let url = notif.url.as_ref().map(|u| api_url_to_web_url(u));
+            let body = format!("{}\n{}", notif.title, notif.reason.label());
+            eprintln!("[DEBUG] Sending priority notification: {:?}", title);
+            crate::platform::notify(&title, &body, url.as_deref());
         }
 
-        // Handle remaining (non-priority) notifications
-        let regular_notifications: Vec<_> = new_notifications
-            .iter()
-            .filter(|n| !priority_notifications.contains(n))
-            .collect();
-
-        if regular_notifications.is_empty() {
+        // If all notifications are priority, we're done
+        if batch.regular.is_empty() {
             return;
         }
 
-        // If there's just one regular notification, show it directly
-        if regular_notifications.len() == 1 {
-            let notif = regular_notifications[0];
+        // Handle regular notifications
+        if batch.regular.len() == 1 {
+            let notif = &batch.regular[0].notification;
             let title = format!("{} - {}", notif.repo_full_name, notif.subject_type);
             let url = notif.url.as_ref().map(|u| api_url_to_web_url(u));
-
-            // Include reason in body for context (e.g., "mentioned", "review requested")
             let body = format!("{}\n{}", notif.title, notif.reason.label());
 
             eprintln!("[DEBUG] Sending single notification: {:?}", title);
             crate::platform::notify(&title, &body, url.as_deref());
         } else {
             // Multiple notifications - show a summary
-            let title = format!("{} new GitHub notifications", regular_notifications.len());
-            let body = regular_notifications
+            let title = format!("{} new GitHub notifications", batch.regular.len());
+            let body = batch.regular
                 .iter()
                 .take(3) // Show first 3
-                .map(|n| format!("• {}", n.title))
+                .map(|p| format!("• {}", p.notification.title))
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            let body = if regular_notifications.len() > 3 {
-                format!("{}\\n...and {} more", body, regular_notifications.len() - 3)
+            let body = if batch.regular.len() > 3 {
+                format!("{}\\n...and {} more", body, batch.regular.len() - 3)
             } else {
                 body
             };
 
             eprintln!("[DEBUG] Sending summary notification: {:?}", title);
-            // No specific URL for summary - just notify
             crate::platform::notify(&title, &body, None);
         }
     }
@@ -377,31 +323,37 @@ impl NotificationsScreen {
                             notifications.len()
                         );
 
-                        // Check for new notifications to send desktop notifications
-                        // Only notify when window is hidden (in tray)
+                        // === PROCESS ONCE PIPELINE ===
+                        // 1. Process all notifications through rule engine (single pass)
+                        let engine = NotificationEngine::new(self.rules.clone());
+                        let processed_for_desktop = engine.process_all(&notifications);
+
+                        // 2. Check for new notifications to send desktop notifications
+                        //    Uses already-processed list (no re-evaluation)
                         let is_hidden = window_state::is_hidden();
                         eprintln!("[DEBUG] is_hidden = {}", is_hidden);
 
                         if is_hidden {
-                            self.send_desktop_notifications(&notifications);
+                            self.send_desktop_notifications(&processed_for_desktop);
                         } else {
                             eprintln!("[DEBUG] Window is visible, skipping desktop notifications");
                         }
 
-                        // Update seen timestamps with current notifications
+                        // 3. Update seen timestamps with current notifications
                         for n in &notifications {
                             self.seen_notification_timestamps
                                 .insert(n.id.clone(), n.updated_at);
                         }
 
-                        // If hidden, don't store the data - keep memory minimal
-                        // The data will be fetched fresh when window is restored
+                        // 4. Store data and rebuild groups (will re-process with filters applied)
+                        //    If hidden, don't store the data - keep memory minimal
                         if is_hidden {
                             // Don't update all_notifications - keep it empty
                             // Aggressively trim memory after the API call
                             crate::platform::trim_memory();
                         } else {
                             self.all_notifications = notifications;
+                            // rebuild_groups() will process with current filters
                             self.rebuild_groups();
                         }
                         self.error_message = None;
