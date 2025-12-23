@@ -439,15 +439,35 @@ impl GitHubClient {
                 })
             }
             SubjectType::Discussion => {
-                // Discussions have limited REST API support
-                // GraphQL would be needed for full details
+                // Try to extract owner/repo/number from subject URL
+                // Format: https://api.github.com/repos/{owner}/{repo}/discussions/{number}
+                if let Some(url) = subject_url {
+                    if let Some((owner, repo, number)) = parse_discussion_url(url) {
+                        match self.get_discussion(&owner, &repo, number).await {
+                            Ok(discussion) => {
+                                return Ok(NotificationSubjectDetail::Discussion(discussion))
+                            }
+                            Err(_) => {
+                                // Fall back to minimal details on error
+                            }
+                        }
+                    }
+                }
+                // Fallback: minimal discussion details
                 Ok(NotificationSubjectDetail::Discussion(
                     super::subject_details::DiscussionDetails {
+                        number: 0,
                         title: title.to_string(),
                         body: None,
                         html_url: subject_url
                             .map(|u| u.replace("api.github.com/repos", "github.com"))
                             .unwrap_or_default(),
+                        author: None,
+                        category: None,
+                        answer_chosen: false,
+                        comments_count: 0,
+                        created_at: None,
+                        updated_at: None,
                     },
                 ))
             }
@@ -462,9 +482,119 @@ impl GitHubClient {
         }
     }
 
+    /// Fetches Discussion details via GraphQL API.
+    ///
+    /// Discussions are not available via REST API, so we use the GraphQL endpoint.
+    pub async fn get_discussion(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<super::subject_details::DiscussionDetails, GitHubError> {
+        use super::subject_details::{DiscussionCategory, DiscussionDetails};
+
+        const GRAPHQL_URL: &str = "https://api.github.com/graphql";
+
+        let query = format!(
+            r#"{{
+              repository(owner: "{}", name: "{}") {{
+                discussion(number: {}) {{
+                  number
+                  title
+                  body
+                  url
+                  author {{ login }}
+                  category {{ name emoji }}
+                  answerChosenAt
+                  comments {{ totalCount }}
+                  createdAt
+                  updatedAt
+                }}
+              }}
+            }}"#,
+            owner, repo, number
+        );
+
+        let body = serde_json::json!({ "query": query });
+
+        let response = self.client.post(GRAPHQL_URL).json(&body).send().await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(GitHubError::Api {
+                status: status.as_u16(),
+                message: "GraphQL request failed".to_string(),
+            });
+        }
+
+        let json: serde_json::Value = response.json().await?;
+
+        // Check for GraphQL errors
+        if let Some(errors) = json.get("errors") {
+            let msg = errors
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown GraphQL error");
+            return Err(GitHubError::Api {
+                status: 400,
+                message: msg.to_string(),
+            });
+        }
+
+        // Parse the discussion data
+        let discussion = &json["data"]["repository"]["discussion"];
+        if discussion.is_null() {
+            return Err(GitHubError::Api {
+                status: 404,
+                message: "Discussion not found".to_string(),
+            });
+        }
+
+        Ok(DiscussionDetails {
+            number: discussion["number"].as_u64().unwrap_or(number),
+            title: discussion["title"].as_str().unwrap_or("").to_string(),
+            body: discussion["body"].as_str().map(String::from),
+            html_url: discussion["url"].as_str().unwrap_or("").to_string(),
+            author: discussion["author"]["login"].as_str().map(String::from),
+            category: discussion["category"]["name"]
+                .as_str()
+                .map(|name| DiscussionCategory {
+                    name: name.to_string(),
+                    emoji: discussion["category"]["emoji"].as_str().map(String::from),
+                }),
+            answer_chosen: discussion["answerChosenAt"].as_str().is_some(),
+            comments_count: discussion["comments"]["totalCount"].as_u64().unwrap_or(0),
+            created_at: discussion["createdAt"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
+            updated_at: discussion["updatedAt"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
+        })
+    }
+
     /// Returns the token for storage purposes.
     #[allow(unused)]
     pub fn token(&self) -> &str {
         &self.token
+    }
+}
+
+/// Parse discussion URL to extract owner, repo, and number.
+/// Format: https://api.github.com/repos/{owner}/{repo}/discussions/{number}
+fn parse_discussion_url(url: &str) -> Option<(String, String, u64)> {
+    let parts: Vec<&str> = url.split('/').collect();
+    // Expected: ["https:", "", "api.github.com", "repos", "{owner}", "{repo}", "discussions", "{number}"]
+    if parts.len() >= 8 && parts[6] == "discussions" {
+        let owner = parts[4].to_string();
+        let repo = parts[5].to_string();
+        let number = parts[7].parse().ok()?;
+        Some((owner, repo, number))
+    } else {
+        None
     }
 }

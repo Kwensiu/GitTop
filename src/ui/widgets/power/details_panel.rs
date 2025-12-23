@@ -358,29 +358,114 @@ fn view_discussion<'a>(
 ) -> Element<'a, NotificationMessage> {
     let text_primary = p.text_primary;
     let text_secondary = p.text_secondary;
+    let text_muted = p.text_muted;
     let accent = p.accent;
+    let accent_success = p.accent_success;
+    let bg_control = p.bg_control;
+    let border_subtle = p.border_subtle;
 
+    // Build category display with emoji
+    let category_label = discussion
+        .category
+        .as_ref()
+        .map(|c| {
+            if let Some(emoji) = &c.emoji {
+                format!("{} {}", emoji, c.name)
+            } else {
+                c.name.clone()
+            }
+        })
+        .unwrap_or_else(|| "Discussion".to_string());
+
+    // Start building the column
     let mut col = column![
-        row![
-            icons::icon_discussion(14.0, accent, icon_theme),
-            Space::new().width(8),
-            text("Discussion").size(14).color(text_secondary),
-        ]
-        .align_y(Alignment::Center),
-        Space::new().height(8),
-        text(&discussion.title).size(16).color(text_primary),
-        Space::new().height(16),
+        // Repo name
+        text(&notif.repo_full_name).size(11).color(text_muted),
+        Space::new().height(6),
     ]
     .width(Fill);
 
+    // Header row with icon and category
+    let mut header_row = row![
+        icons::icon_discussion(14.0, accent, icon_theme),
+        Space::new().width(8),
+        text(category_label).size(12).color(text_secondary),
+    ]
+    .spacing(0)
+    .align_y(Alignment::Center);
+
+    // Add answered badge if applicable
+    if discussion.answer_chosen {
+        header_row = header_row.push(Space::new().width(8));
+        header_row = header_row.push(
+            container(text("✓ Answered").size(10).color(accent_success))
+                .padding([2, 6])
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(Color::from_rgba(
+                        accent_success.r,
+                        accent_success.g,
+                        accent_success.b,
+                        0.15,
+                    ))),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+        );
+    }
+
+    col = col.push(header_row);
+    col = col.push(Space::new().height(8));
+
+    // Title
+    col = col.push(text(&discussion.title).size(16).color(text_primary));
+    col = col.push(Space::new().height(4));
+
+    // Author
+    if let Some(author) = &discussion.author {
+        col = col.push(
+            text(format!("Started by @{}", author))
+                .size(11)
+                .color(text_muted),
+        );
+    }
+    col = col.push(Space::new().height(16));
+
+    // Body
     if let Some(body) = &discussion.body {
         if !body.is_empty() {
             let truncated = truncate_text(body, 1500);
-            col = col.push(text(truncated).size(13).color(text_secondary));
+            col = col.push(
+                container(text(truncated).size(13).color(text_secondary))
+                    .padding(12)
+                    .width(Fill)
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(bg_control)),
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            color: border_subtle,
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    }),
+            );
             col = col.push(Space::new().height(16));
         }
     }
 
+    // Comments count
+    if discussion.comments_count > 0 {
+        col = col.push(
+            text(format!("{} comments", discussion.comments_count))
+                .size(12)
+                .color(text_muted),
+        );
+        col = col.push(Space::new().height(16));
+    }
+
+    // Action buttons
     col = col.push(view_action_buttons(&notif.id, notif.unread, icon_theme));
     col.padding(24).into()
 }

@@ -73,12 +73,26 @@ pub struct CommentDetails {
     pub user: User,
 }
 
-/// Discussion details (limited API support)
+/// Discussion details (fetched via GraphQL API)
 #[derive(Debug, Clone)]
 pub struct DiscussionDetails {
+    pub number: u64,
     pub title: String,
     pub body: Option<String>,
     pub html_url: String,
+    pub author: Option<String>,
+    pub category: Option<DiscussionCategory>,
+    pub answer_chosen: bool,
+    pub comments_count: u64,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+/// Discussion category
+#[derive(Debug, Clone)]
+pub struct DiscussionCategory {
+    pub name: String,
+    pub emoji: Option<String>,
 }
 
 /// Unified notification subject detail

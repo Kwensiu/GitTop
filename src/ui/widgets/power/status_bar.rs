@@ -30,7 +30,7 @@ pub fn view_status_bar<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMes
             Space::new().width(Fill),
             rule_engine_btn,
             Space::new().width(12),
-            text("GitTop Enterprise").size(11).color(p.text_muted),
+            text("Power Mode").size(11).color(p.text_muted),
         ]
         .align_y(Alignment::Center)
         .padding([4, 12]),
