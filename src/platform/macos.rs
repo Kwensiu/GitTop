@@ -34,7 +34,11 @@ pub fn trim_memory() {
 ///
 /// Note: macOS doesn't support click-to-open-URL natively via this API.
 /// The URL is included in the notification body as a fallback.
-pub fn notify(title: &str, body: &str, url: Option<&str>) {
+pub fn notify(
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) -> Result<(), mac_notification_sys::error::Error> {
     use mac_notification_sys::*;
 
     // Include URL in body if provided (macOS notification click handling is limited)
@@ -45,10 +49,11 @@ pub fn notify(title: &str, body: &str, url: Option<&str>) {
     };
 
     // Fire and forget - allocates nothing long-lived
-    let _ = send_notification(
+    send_notification(
         title,
         None, // No subtitle
         &display_body,
         None, // No sound (use default)
-    );
+    )
+    .map(|_| ())
 }

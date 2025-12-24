@@ -114,29 +114,24 @@ impl DiskCache {
 
     /// Store an ETag and cached response body for a URL.
     pub fn save_etag_response(&self, url: &str, etag: &str, body: &[u8]) -> Result<(), CacheError> {
-        let tree = self.db.open_tree("etag_cache")?;
+        // Store ETag separately for fast lookup (HEAD-like checks)
+        let etags = self.db.open_tree("etags")?;
+        etags.insert(url.as_bytes(), etag.as_bytes())?;
 
-        // Store as: key = url, value = etag\0body
-        let mut value = etag.as_bytes().to_vec();
-        value.push(0); // null separator
-        value.extend_from_slice(body);
+        // Store body separately
+        let bodies = self.db.open_tree("bodies")?;
+        bodies.insert(url.as_bytes(), body)?;
 
-        tree.insert(url.as_bytes(), value)?;
         Ok(())
     }
 
     /// Get cached ETag for a URL.
     pub fn get_etag(&self, url: &str) -> Result<Option<String>, CacheError> {
-        let tree = self.db.open_tree("etag_cache")?;
-        match tree.get(url.as_bytes())? {
+        let etags = self.db.open_tree("etags")?;
+        match etags.get(url.as_bytes())? {
             Some(bytes) => {
-                // Find null separator
-                if let Some(pos) = bytes.iter().position(|&b| b == 0) {
-                    let etag = String::from_utf8_lossy(&bytes[..pos]).to_string();
-                    Ok(Some(etag))
-                } else {
-                    Ok(None)
-                }
+                let etag = String::from_utf8_lossy(&bytes).to_string();
+                Ok(Some(etag))
             }
             None => Ok(None),
         }
@@ -144,16 +139,9 @@ impl DiskCache {
 
     /// Get cached response body for a URL.
     pub fn get_cached_body(&self, url: &str) -> Result<Option<Vec<u8>>, CacheError> {
-        let tree = self.db.open_tree("etag_cache")?;
-        match tree.get(url.as_bytes())? {
-            Some(bytes) => {
-                // Find null separator
-                if let Some(pos) = bytes.iter().position(|&b| b == 0) {
-                    Ok(Some(bytes[pos + 1..].to_vec()))
-                } else {
-                    Ok(None)
-                }
-            }
+        let bodies = self.db.open_tree("bodies")?;
+        match bodies.get(url.as_bytes())? {
+            Some(bytes) => Ok(Some(bytes.to_vec())),
             None => Ok(None),
         }
     }

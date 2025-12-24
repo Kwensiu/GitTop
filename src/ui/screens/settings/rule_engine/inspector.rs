@@ -1,6 +1,6 @@
 //! Rule Inspector component - shows detailed rule information in a side panel.
 
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Fill, Length};
 
 use crate::settings::IconTheme;
@@ -9,6 +9,7 @@ use crate::ui::screens::settings::rule_engine::rules::{
     AccountRule, NotificationRuleSet, OrgRule, OutsideScheduleBehavior, RuleAction, TypeRule,
 };
 use crate::ui::theme;
+use chrono::Local;
 
 use super::messages::RuleEngineMessage;
 
@@ -34,7 +35,7 @@ impl FoundRule {
     pub fn action(&self) -> RuleAction {
         match self {
             FoundRule::Account(r) => {
-                if r.is_active_now() {
+                if r.is_active(&Local::now()) {
                     RuleAction::Show
                 } else {
                     match r.outside_behavior {
@@ -152,7 +153,7 @@ pub fn view_inspector(
     let action = rule.action();
     let action_color = match action {
         RuleAction::Hide => p.accent_warning,
-        RuleAction::Priority => p.accent,
+        RuleAction::Important => p.accent,
         _ => p.text_primary,
     };
 
@@ -162,8 +163,8 @@ pub fn view_inspector(
             "Notification appears in list but does not trigger desktop notification."
         }
         RuleAction::Hide => "Notification is completely hidden from the list.",
-        RuleAction::Priority => {
-            "OVERRIDES all suppression rules. Always shown and highlights with desktop notification."
+        RuleAction::Important => {
+            "OVERRIDES all Hide/Silent rules. Always shown and triggers desktop notification."
         }
     };
 

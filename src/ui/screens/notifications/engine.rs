@@ -93,36 +93,18 @@ impl NotificationEngine {
     /// A notification triggers a desktop alert if:
     /// 1. It's unread
     /// 2. It's new or updated (based on seen_timestamps)
-    /// 3. Its action is Show or Priority (not Silent or Hide)
+    /// 3. Its action is Show or Important (not Silent or Hide)
     pub fn should_notify_desktop(
         processed: &ProcessedNotification,
         seen_timestamps: &HashMap<String, DateTime<Utc>>,
     ) -> bool {
         let notif = &processed.notification;
 
-        // Must be unread
-        if !notif.unread {
-            return false;
-        }
-
-        // Check if notification is new/updated
-        let is_new = match seen_timestamps.get(&notif.id) {
-            None => true,                                     // Never seen this ID
-            Some(last_seen) => notif.updated_at > *last_seen, // Updated since last seen
-        };
-
-        if !is_new {
-            return false;
-        }
-
-        // Only Show and Priority actions trigger desktop notifications
-        matches!(processed.action, RuleAction::Show | RuleAction::Priority)
-    }
-
-    /// Check if a processed notification is a priority notification.
-    #[inline]
-    pub fn is_priority(processed: &ProcessedNotification) -> bool {
-        processed.action == RuleAction::Priority
+        notif.unread
+            && seen_timestamps
+                .get(&notif.id)
+                .is_none_or(|last_seen| notif.updated_at > *last_seen)
+            && matches!(processed.action, RuleAction::Show | RuleAction::Important)
     }
 }
 
@@ -132,7 +114,7 @@ impl NotificationEngine {
 
 /// Categorized notifications for desktop alerts.
 pub struct DesktopNotificationBatch<'a> {
-    /// Priority notifications (always shown prominently)
+    /// Important notifications (always shown prominently)
     pub priority: Vec<&'a ProcessedNotification>,
     /// Regular notifications (Show action)
     pub regular: Vec<&'a ProcessedNotification>,
@@ -144,22 +126,10 @@ impl<'a> DesktopNotificationBatch<'a> {
         processed: &'a [ProcessedNotification],
         seen_timestamps: &HashMap<String, DateTime<Utc>>,
     ) -> Self {
-        let desktop_worthy: Vec<_> = processed
+        let (priority, regular) = processed
             .iter()
             .filter(|p| NotificationEngine::should_notify_desktop(p, seen_timestamps))
-            .collect();
-
-        let priority: Vec<_> = desktop_worthy
-            .iter()
-            .filter(|p| NotificationEngine::is_priority(p))
-            .copied()
-            .collect();
-
-        let regular: Vec<_> = desktop_worthy
-            .iter()
-            .filter(|p| !NotificationEngine::is_priority(p))
-            .copied()
-            .collect();
+            .partition(|p| (*p).is_priority());
 
         Self { priority, regular }
     }
@@ -195,7 +165,6 @@ mod tests {
             is_private: false,
             subject_type: SubjectType::Issue,
             account: "testuser".to_string(),
-            time_ago: "1m".to_string(),
         }
     }
 

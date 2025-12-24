@@ -9,5 +9,4 @@ mod view;
 // Public API exports for external consumers
 #[allow(unused_imports)]
 pub use engine::{DesktopNotificationBatch, NotificationEngine};
-pub use messages::NotificationMessage;
 pub use screen::NotificationsScreen;

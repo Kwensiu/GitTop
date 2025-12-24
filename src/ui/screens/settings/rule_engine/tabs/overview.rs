@@ -1,6 +1,6 @@
 //! Overview tab for Rule Engine - System health and high-impact rules.
 
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Element, Fill, Length};
 
 use crate::settings::IconTheme;
@@ -19,8 +19,8 @@ pub fn view_overview_tab(
 
     // System health stats
     let active_count = rules.active_rule_count();
-    let suppress_count = rules.count_suppress_rules();
-    let high_priority_count = rules.count_high_priority_rules();
+    let hidden_count = rules.count_suppress_rules();
+    let important_count = rules.count_high_priority_rules();
 
     // ========================================================================
     // Header & Greeting
@@ -71,16 +71,16 @@ pub fn view_overview_tab(
         Space::new().width(16),
         divider(),
         Space::new().width(16),
-        // Suppressed
+        // Hidden
         status_item(
-            "Suppressed",
-            suppress_count.to_string(),
-            if suppress_count > 0 {
+            "Hidden",
+            hidden_count.to_string(),
+            if hidden_count > 0 {
                 icons::icon_eye_off(16.0, p.accent_warning, icon_theme)
             } else {
                 icons::icon_check(16.0, p.text_muted, icon_theme)
             },
-            if suppress_count > 0 {
+            if hidden_count > 0 {
                 p.accent_warning
             } else {
                 p.text_primary
@@ -89,11 +89,11 @@ pub fn view_overview_tab(
         Space::new().width(16),
         divider(),
         Space::new().width(16),
-        // Priority
+        // Important
         status_item(
-            "Priority",
-            high_priority_count.to_string(),
-            if high_priority_count > 0 {
+            "Important",
+            important_count.to_string(),
+            if important_count > 0 {
                 icons::icon_zap(16.0, p.accent, icon_theme)
             } else {
                 icons::icon_check(16.0, p.text_muted, icon_theme)
@@ -234,9 +234,11 @@ pub fn view_overview_tab(
     let high_impact_rules = rules.get_high_impact_rules();
 
     let list_content: Element<'static, RuleEngineMessage> = if high_impact_rules.is_empty() {
-        column![text("No high-impact rules active.")
-            .size(12)
-            .color(p.text_muted),]
+        column![
+            text("No high-impact rules active.")
+                .size(12)
+                .color(p.text_muted),
+        ]
         .into()
     } else {
         column(

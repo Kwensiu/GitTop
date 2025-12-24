@@ -1,57 +1,48 @@
 //! System tray management for GitTop.
-//!
-//! Provides cross-platform tray icon with menu support using tray-icon crate.
-//! Supports Windows, macOS, and Linux (GTK).
 
 use std::sync::OnceLock;
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuId, MenuItem},
     Icon, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    menu::{Menu, MenuEvent, MenuId, MenuItem},
 };
 
-/// Global storage for menu IDs so we can identify them in the global poll
-static SHOW_MENU_ID: OnceLock<MenuId> = OnceLock::new();
-static QUIT_MENU_ID: OnceLock<MenuId> = OnceLock::new();
+static MENU_IDS: OnceLock<MenuIds> = OnceLock::new();
 
-/// Events from the system tray that the app should handle.
+#[derive(Debug)]
+struct MenuIds {
+    show: MenuId,
+    quit: MenuId,
+}
+
 #[derive(Debug, Clone)]
 pub enum TrayCommand {
-    /// Show or focus the main window.
     ShowWindow,
-    /// Quit the application.
     Quit,
 }
 
-/// Manages the system tray icon and menu.
 pub struct TrayManager {
     #[allow(dead_code)]
     tray: TrayIcon,
 }
 
 impl TrayManager {
-    /// Create a new tray icon with menu.
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Create menu items
         let show_item = MenuItem::new("Show GitTop", true, None);
         let quit_item = MenuItem::new("Quit", true, None);
 
-        let show_item_id = show_item.id().clone();
-        let quit_item_id = quit_item.id().clone();
+        MENU_IDS
+            .set(MenuIds {
+                show: show_item.id().clone(),
+                quit: quit_item.id().clone(),
+            })
+            .expect("TrayManager initialized twice");
 
-        // Store IDs globally for poll_global_events
-        let _ = SHOW_MENU_ID.set(show_item_id);
-        let _ = QUIT_MENU_ID.set(quit_item_id);
-
-        // Build menu
         let menu = Menu::new();
         menu.append(&show_item)?;
         menu.append(&quit_item)?;
 
-        // Create icon from embedded PNG bytes
-        // Using a simple 32x32 diamond icon
-        let icon = Self::load_icon()?;
+        let icon = Self::create_icon()?;
 
-        // Build tray icon
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("GitTop - GitHub Notifications")
@@ -61,63 +52,49 @@ impl TrayManager {
         Ok(Self { tray })
     }
 
-    /// Load the tray icon from embedded bytes.
-    fn load_icon() -> Result<Icon, Box<dyn std::error::Error>> {
-        // Generate a simple 32x32 diamond icon programmatically
-        // This avoids needing external icon files
-        let size = 32u32;
-        let mut rgba = vec![0u8; (size * size * 4) as usize];
+    fn create_icon() -> Result<Icon, Box<dyn std::error::Error>> {
+        const SIZE: u32 = 32;
+        const CENTER: i32 = (SIZE / 2) as i32;
+        const RADIUS: i32 = CENTER - 2;
+        const COLOR: [u8; 4] = [100, 149, 237, 255]; // Cornflower blue
 
-        // Draw a filled diamond shape
-        let center = size as i32 / 2;
-        let radius = center - 2;
+        let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
 
-        for y in 0..size {
-            for x in 0..size {
-                let dx = (x as i32 - center).abs();
-                let dy = (y as i32 - center).abs();
+        for (i, pixel) in rgba.chunks_exact_mut(4).enumerate() {
+            let x = (i % SIZE as usize) as i32;
+            let y = (i / SIZE as usize) as i32;
 
-                // Diamond shape: |x - center| + |y - center| <= radius
-                if dx + dy <= radius {
-                    let idx = ((y * size + x) * 4) as usize;
-                    // Blue-purple color matching app theme
-                    rgba[idx] = 100; // R
-                    rgba[idx + 1] = 149; // G
-                    rgba[idx + 2] = 237; // B - cornflower blue
-                    rgba[idx + 3] = 255; // A
-                }
+            if (x - CENTER).abs() + (y - CENTER).abs() <= RADIUS {
+                pixel.copy_from_slice(&COLOR);
             }
         }
 
-        Icon::from_rgba(rgba, size, size).map_err(|e| e.into())
+        Icon::from_rgba(rgba, SIZE, SIZE).map_err(Into::into)
     }
 
-    /// Poll for tray events from global receivers (called from async context).
     pub fn poll_global_events() -> Option<TrayCommand> {
-        // Check for menu events
-        if let Ok(event) = MenuEvent::receiver().try_recv() {
-            // Check against globally stored menu IDs
-            if let Some(show_id) = SHOW_MENU_ID.get() {
-                if event.id == *show_id {
-                    return Some(TrayCommand::ShowWindow);
-                }
-            }
-            if let Some(quit_id) = QUIT_MENU_ID.get() {
-                if event.id == *quit_id {
-                    return Some(TrayCommand::Quit);
-                }
-            }
-        }
+        let command = Self::poll_menu_events();
+        Self::drain_tray_icon_events();
+        command
+    }
 
-        // Drain tray icon events but don't act on clicks
-        // Window should only be shown via the menu "Show" item
-        // Trim memory on Leave event to prevent accumulation
+    fn poll_menu_events() -> Option<TrayCommand> {
+        let event = MenuEvent::receiver().try_recv().ok()?;
+        let ids = MENU_IDS.get()?;
+
+        [
+            (&ids.show, TrayCommand::ShowWindow),
+            (&ids.quit, TrayCommand::Quit),
+        ]
+        .into_iter()
+        .find_map(|(id, cmd)| (event.id == *id).then_some(cmd))
+    }
+
+    fn drain_tray_icon_events() {
         while let Ok(event) = TrayIconEvent::receiver().try_recv() {
             if matches!(event, TrayIconEvent::Leave { .. }) {
                 crate::platform::trim_memory();
             }
         }
-
-        None
     }
 }

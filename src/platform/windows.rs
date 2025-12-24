@@ -6,8 +6,8 @@ use std::ffi::CString;
 pub fn focus_existing_window() {
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextA, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
-        SW_RESTORE, SW_SHOW,
+        EnumWindows, GetWindowTextA, IsIconic, IsWindowVisible, SW_RESTORE, SW_SHOW,
+        SetForegroundWindow, ShowWindow,
     };
 
     unsafe extern "system" fn enum_callback(hwnd: HWND, _lparam: LPARAM) -> windows::core::BOOL {
@@ -83,32 +83,11 @@ pub fn enable_dark_mode() {
 /// Aggressively trim the process working set to reduce memory footprint.
 /// This moves pages to the page file, making the process appear to use less memory.
 pub fn trim_working_set() {
+    use windows::Win32::System::ProcessStatus::EmptyWorkingSet;
     use windows::Win32::System::Threading::GetCurrentProcess;
 
-    // Use K32EmptyWorkingSet which is simpler and more effective
-    type EmptyWorkingSetFn = unsafe extern "system" fn(windows::Win32::Foundation::HANDLE) -> i32;
-
     unsafe {
-        let process = GetCurrentProcess();
-
-        // Try to load K32EmptyWorkingSet from kernel32.dll
-        let lib_name = CString::new("kernel32.dll").unwrap();
-        let lib = windows::Win32::System::LibraryLoader::LoadLibraryA(
-            windows::core::PCSTR::from_raw(lib_name.as_ptr() as *const u8),
-        );
-
-        if let Ok(handle) = lib {
-            let func_name = CString::new("K32EmptyWorkingSet").unwrap();
-            let func = windows::Win32::System::LibraryLoader::GetProcAddress(
-                handle,
-                windows::core::PCSTR::from_raw(func_name.as_ptr() as *const u8),
-            );
-
-            if let Some(f) = func {
-                let empty_working_set: EmptyWorkingSetFn = std::mem::transmute(f);
-                empty_working_set(process);
-            }
-        }
+        let _ = EmptyWorkingSet(GetCurrentProcess());
     }
 }
 
@@ -120,13 +99,12 @@ pub fn trim_working_set() {
 /// - Fire and exit
 ///
 /// If `url` is provided, clicking the notification opens that URL.
-pub fn notify(title: &str, body: &str, url: Option<&str>) {
+pub fn notify(
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) -> Result<(), tauri_winrt_notification::Error> {
     use tauri_winrt_notification::{Duration, Toast};
-
-    eprintln!(
-        "[DEBUG] notify() called: title={:?}, body={:?}, url={:?}",
-        title, body, url
-    );
 
     let mut toast = Toast::new(Toast::POWERSHELL_APP_ID)
         .title(title)
@@ -137,15 +115,11 @@ pub fn notify(title: &str, body: &str, url: Option<&str>) {
     if let Some(url) = url {
         let url_owned = url.to_string();
         toast = toast.on_activated(move |_action| {
-            eprintln!("[DEBUG] Toast activated! Opening URL");
             let _ = open::that(&url_owned);
             Ok(())
         });
     }
 
     // Fire and forget - no handles kept, no memory retained
-    match toast.show() {
-        Ok(()) => eprintln!("[DEBUG] Toast shown successfully"),
-        Err(e) => eprintln!("[DEBUG] Toast show FAILED: {:?}", e),
-    }
+    toast.show()
 }

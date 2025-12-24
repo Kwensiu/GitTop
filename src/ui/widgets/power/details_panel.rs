@@ -3,15 +3,17 @@
 //! Displays fetched Issue/PR/Comment content inline when a notification is
 //! clicked in power mode.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Color, Element, Fill, Length};
 
+use crate::github::NotificationView;
 use crate::github::subject_details::{
     CommentDetails, DiscussionDetails, IssueDetails, NotificationSubjectDetail, PullRequestDetails,
 };
-use crate::github::NotificationView;
 use crate::settings::IconTheme;
-use crate::ui::screens::notifications::NotificationMessage;
+use crate::ui::screens::notifications::messages::{
+    NotificationMessage, ThreadMessage, ViewMessage,
+};
 use crate::ui::{icons, theme};
 
 /// View the details panel for a selected notification.
@@ -563,7 +565,7 @@ fn view_action_buttons(
             "Mark as Read",
             p.accent_success,
             icons::icon_check(12.0, p.accent_success, icon_theme),
-            NotificationMessage::MarkAsRead(id.clone()),
+            NotificationMessage::Thread(ThreadMessage::MarkAsRead(id.clone())),
         ));
     }
 
@@ -572,7 +574,7 @@ fn view_action_buttons(
         "Delete",
         p.accent_danger,
         icons::icon_trash(12.0, p.accent_danger, icon_theme),
-        NotificationMessage::MarkAsDone(id_for_done),
+        NotificationMessage::Thread(ThreadMessage::MarkAsDone(id_for_done)),
     ));
 
     // Open in GitHub button
@@ -655,7 +657,7 @@ fn view_open_in_github_button(icon_theme: IconTheme) -> Element<'static, Notific
         }
     })
     .padding([8, 12])
-    .on_press(NotificationMessage::OpenInBrowser)
+    .on_press(NotificationMessage::View(ViewMessage::OpenInBrowser))
     .into()
 }
 
@@ -664,11 +666,11 @@ fn view_open_button(icon_theme: IconTheme) -> Element<'static, NotificationMessa
     view_open_in_github_button(icon_theme)
 }
 
-fn view_label(name: &str, hex_color: &str) -> Element<'static, NotificationMessage> {
+fn view_label<'a>(name: &'a str, hex_color: &str) -> Element<'a, NotificationMessage> {
     let p = theme::palette();
     let color = parse_hex_color(hex_color).unwrap_or(p.text_muted);
-    let owned_name = name.to_string();
-    container(text(owned_name).size(10).color(color))
+
+    container(text(name).size(10).color(color))
         .padding([2, 6])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(Color::from_rgba(
@@ -710,10 +712,10 @@ fn parse_hex_color(hex: &str) -> Option<Color> {
     Some(Color::from_rgb8(r, g, b))
 }
 
-fn truncate_text(text: &str, max_len: usize) -> String {
+fn truncate_text(text: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     if text.len() <= max_len {
-        text.to_string()
+        std::borrow::Cow::Borrowed(text)
     } else {
-        format!("{}...", &text[..max_len])
+        std::borrow::Cow::Owned(format!("{}...", &text[..max_len]))
     }
 }

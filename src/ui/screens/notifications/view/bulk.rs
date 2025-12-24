@@ -1,12 +1,12 @@
 //! Bulk action bar view for Power Mode.
 
-use iced::widget::{button, container, row, text, Space};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
 use crate::ui::{icons, theme};
 
-use crate::ui::screens::notifications::messages::NotificationMessage;
+use crate::ui::screens::notifications::messages::{BulkMessage, NotificationMessage};
 use crate::ui::screens::notifications::screen::NotificationsScreen;
 
 impl NotificationsScreen {
@@ -31,16 +31,14 @@ impl NotificationsScreen {
         let select_all_btn = button(text("Select All").size(12).color(p.text_secondary))
             .style(theme::ghost_button)
             .padding([6, 10])
-            .on_press(NotificationMessage::SelectAll);
+            .on_press(NotificationMessage::Bulk(BulkMessage::SelectAll));
 
         let clear_btn = button(text("Clear").size(12).color(p.text_secondary))
             .style(theme::ghost_button)
             .padding([6, 10])
-            .on_press_maybe(if selection_count > 0 {
-                Some(NotificationMessage::ClearSelection)
-            } else {
-                None
-            });
+            .on_press_maybe(
+                (selection_count > 0).then_some(NotificationMessage::Bulk(BulkMessage::Clear)),
+            );
 
         let cancel_btn = button(
             row![
@@ -52,7 +50,7 @@ impl NotificationsScreen {
         )
         .style(theme::ghost_button)
         .padding([6, 10])
-        .on_press(NotificationMessage::ToggleBulkMode);
+        .on_press(NotificationMessage::Bulk(BulkMessage::ToggleMode));
 
         // Action buttons (only enabled when items selected)
         let mark_read_btn = button(
@@ -65,11 +63,9 @@ impl NotificationsScreen {
         )
         .style(theme::primary_button)
         .padding([6, 12])
-        .on_press_maybe(if selection_count > 0 {
-            Some(NotificationMessage::BulkMarkAsRead)
-        } else {
-            None
-        });
+        .on_press_maybe(
+            (selection_count > 0).then_some(NotificationMessage::Bulk(BulkMessage::MarkAsRead)),
+        );
 
         let archive_btn = button(
             row![
@@ -97,11 +93,9 @@ impl NotificationsScreen {
             }
         })
         .padding([6, 12])
-        .on_press_maybe(if selection_count > 0 {
-            Some(NotificationMessage::BulkMarkAsDone)
-        } else {
-            None
-        });
+        .on_press_maybe(
+            (selection_count > 0).then_some(NotificationMessage::Bulk(BulkMessage::MarkAsDone)),
+        );
 
         container(
             row![

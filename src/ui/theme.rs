@@ -7,7 +7,7 @@
 
 use iced::widget::{button, container, pick_list, scrollable, text, text_input};
 use iced::{Background, Border, Color, Theme};
-use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use crate::settings::AppTheme;
 
@@ -277,7 +277,8 @@ mod theme_state {
     }
 
     pub fn current_theme() -> AppTheme {
-        AppTheme::from_u8(CURRENT_THEME.load(Ordering::Relaxed))
+        AppTheme::try_from(CURRENT_THEME.load(Ordering::Relaxed))
+            .unwrap_or_else(|_| AppTheme::platform_default())
     }
 
     pub fn set_notification_font_scale(scale: f32) {
@@ -375,6 +376,28 @@ pub fn sidebar(_: &Theme) -> container::Style {
             color: p.border_subtle,
             width: 1.0,
             radius: 0.0.into(),
+        },
+        ..Default::default()
+    })
+}
+
+pub fn priority_header_container(_: &Theme) -> container::Style {
+    with_palette(|p| container::Style {
+        background: Some(Background::Color(Color::from_rgba(
+            p.accent_warning.r,
+            p.accent_warning.g,
+            p.accent_warning.b,
+            0.05,
+        ))),
+        border: Border {
+            radius: 6.0.into(),
+            color: Color::from_rgba(
+                p.accent_warning.r,
+                p.accent_warning.g,
+                p.accent_warning.b,
+                0.15,
+            ),
+            width: 1.0,
         },
         ..Default::default()
     })
@@ -652,6 +675,24 @@ pub fn context_menu_container() -> container::Style {
         },
         ..Default::default()
     }
+}
+
+/// Card container style (for modals, popups)
+pub fn card(_: &Theme) -> container::Style {
+    with_palette(|p| container::Style {
+        background: Some(Background::Color(p.bg_card)),
+        border: Border {
+            radius: 12.0.into(),
+            color: p.border_subtle,
+            width: 1.0,
+        },
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 16.0,
+        },
+        ..Default::default()
+    })
 }
 
 /// Rule card container style

@@ -1,6 +1,6 @@
 //! Shared UI components for Rule Engine.
 
-use iced::widget::{button, column, container, row, text, toggler, Space};
+use iced::widget::{Space, button, column, container, row, text, toggler};
 use iced::{Alignment, Element, Fill};
 use iced_aw::ContextMenu;
 

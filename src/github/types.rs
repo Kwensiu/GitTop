@@ -189,7 +189,6 @@ pub struct NotificationView {
     pub reason: NotificationReason,
     pub unread: bool,
     pub updated_at: DateTime<Utc>,
-    pub time_ago: String,
     pub url: Option<String>,
     #[allow(dead_code)] // Reserved for comment preview feature
     pub latest_comment_url: Option<String>,
@@ -208,12 +207,11 @@ impl NotificationView {
             id: n.id,
             title: n.subject.title,
             repo_name: n.repository.name,
-            repo_full_name: n.repository.full_name.clone(),
+            repo_full_name: n.repository.full_name,
             subject_type: n.subject.subject_type,
             reason: n.reason,
             unread: n.unread,
             updated_at: n.updated_at,
-            time_ago: format_time_ago(n.updated_at),
             url: n.subject.url,
             latest_comment_url: n.subject.latest_comment_url,
             avatar_url: n.repository.owner.avatar_url,
@@ -237,7 +235,7 @@ impl From<Notification> for NotificationView {
     }
 }
 
-fn format_time_ago(dt: DateTime<Utc>) -> String {
+pub fn format_time_ago(dt: DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = now.signed_duration_since(dt);
 

@@ -85,7 +85,7 @@ pub fn generate_mock_notifications(count: usize, account: &str) -> Vec<Notificat
             reason,
             unread: i % 3 != 0, // ~67% unread
             updated_at,
-            time_ago: format_time_ago(updated_at),
+
             url: Some(format!(
                 "https://api.github.com/repos/{}/{}/issues/{}",
                 owner, repo, i
@@ -98,21 +98,4 @@ pub fn generate_mock_notifications(count: usize, account: &str) -> Vec<Notificat
     }
 
     notifications
-}
-
-fn format_time_ago(dt: chrono::DateTime<Utc>) -> String {
-    let now = Utc::now();
-    let duration = now.signed_duration_since(dt);
-
-    if duration.num_minutes() < 1 {
-        "just now".to_string()
-    } else if duration.num_minutes() < 60 {
-        format!("{}m", duration.num_minutes())
-    } else if duration.num_hours() < 24 {
-        format!("{}h", duration.num_hours())
-    } else if duration.num_days() < 7 {
-        format!("{}d", duration.num_days())
-    } else {
-        dt.format("%b %d").to_string()
-    }
 }

@@ -21,6 +21,12 @@ pub struct ProcessedNotification {
     pub action: RuleAction,
 }
 
+impl ProcessedNotification {
+    pub fn is_priority(&self) -> bool {
+        self.action == RuleAction::Important
+    }
+}
+
 /// Group of notifications by time period.
 #[derive(Debug, Clone)]
 pub struct NotificationGroup {
@@ -43,7 +49,7 @@ pub struct FilterSettings {
 }
 
 /// Group processed notifications by time period (Today, This Week, Older).
-/// Priority notifications are extracted into a separate group shown first (only if `show_priority_group` is true).
+/// Important notifications are extracted into a separate group shown first (only if `show_priority_group` is true).
 pub fn group_processed_notifications(
     processed: &[ProcessedNotification],
     show_priority_group: bool,
@@ -51,35 +57,37 @@ pub fn group_processed_notifications(
     let now_date = Local::now().date_naive();
     let one_week_ago = now_date - chrono::Duration::days(7);
 
-    let mut priority = Vec::new();
-    let mut today = Vec::new();
-    let mut this_week = Vec::new();
-    let mut older = Vec::new();
+    // Single pass accumulation into buckets
+    let (priority, today, this_week, older) = processed.iter().fold(
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+        |(mut p, mut t, mut w, mut o), notif| {
+            if show_priority_group && notif.action == RuleAction::Important {
+                p.push(notif.clone());
+            } else {
+                let notif_date = notif
+                    .notification
+                    .updated_at
+                    .with_timezone(&Local)
+                    .date_naive();
 
-    for p in processed {
-        // Priority notifications go to their own group only if priority grouping is enabled
-        if show_priority_group && p.action == RuleAction::Priority {
-            priority.push(p.clone());
-            continue;
-        }
+                if notif_date >= now_date {
+                    t.push(notif.clone());
+                } else if notif_date >= one_week_ago {
+                    w.push(notif.clone());
+                } else {
+                    o.push(notif.clone());
+                }
+            }
+            (p, t, w, o)
+        },
+    );
 
-        // Otherwise, group by time (priority notifications also go here in "All" mode)
-        let notif_date = p.notification.updated_at.with_timezone(&Local).date_naive();
-        if notif_date >= now_date {
-            today.push(p.clone());
-        } else if notif_date >= one_week_ago {
-            this_week.push(p.clone());
-        } else {
-            older.push(p.clone());
-        }
-    }
+    let mut groups = Vec::with_capacity(4);
 
-    let mut groups = Vec::new();
-
-    // Priority group always first (if not empty and enabled)
+    // Important group always first (if not empty and enabled)
     if show_priority_group && !priority.is_empty() {
         groups.push(NotificationGroup {
-            title: "Priority".to_string(),
+            title: "Important".to_string(),
             notifications: priority,
             is_expanded: true,
             is_priority: true,
@@ -110,20 +118,6 @@ pub fn group_processed_notifications(
     groups
 }
 
-/// Group notifications by time period (Today, This Week, Older).
-/// Legacy function - wraps notifications without rule processing.
-#[allow(dead_code)]
-pub fn group_by_time(notifications: &[NotificationView]) -> Vec<NotificationGroup> {
-    let processed: Vec<_> = notifications
-        .iter()
-        .map(|n| ProcessedNotification {
-            notification: n.clone(),
-            action: RuleAction::Show,
-        })
-        .collect();
-    group_processed_notifications(&processed, false) // No priority grouping for legacy
-}
-
 /// Apply filters to a list of notifications.
 pub fn apply_filters(
     notifications: &[NotificationView],
@@ -132,69 +126,54 @@ pub fn apply_filters(
     notifications
         .iter()
         .filter(|n| {
-            // If not showing all, only show unread notifications
-            if !filters.show_all && !n.unread {
-                return false;
-            }
-            // Filter by subject type if specified
-            if let Some(ref selected_type) = filters.selected_type {
-                if &n.subject_type != selected_type {
-                    return false;
-                }
-            }
-            // Filter by repository if specified
-            if let Some(ref selected_repo) = filters.selected_repo {
-                if &n.repo_full_name != selected_repo {
-                    return false;
-                }
-            }
-            true
+            let passes_read = filters.show_all || n.unread;
+            let passes_type = filters
+                .selected_type
+                .as_ref()
+                .is_none_or(|t| &n.subject_type == t);
+            let passes_repo = filters
+                .selected_repo
+                .as_ref()
+                .is_none_or(|r| &n.repo_full_name == r);
+            passes_read && passes_type && passes_repo
         })
         .cloned()
         .collect()
 }
 
+const SUBJECT_TYPE_ORDER: &[SubjectType] = &[
+    SubjectType::PullRequest,
+    SubjectType::Issue,
+    SubjectType::Commit,
+    SubjectType::CheckSuite,
+    SubjectType::Discussion,
+    SubjectType::Release,
+    SubjectType::RepositoryVulnerabilityAlert,
+];
+
 /// Count notifications by subject type.
 pub fn count_by_type(notifications: &[NotificationView]) -> Vec<(SubjectType, usize)> {
-    let mut counts: HashMap<SubjectType, usize> = HashMap::new();
+    let counts = notifications.iter().fold(HashMap::new(), |mut acc, n| {
+        *acc.entry(n.subject_type).or_insert(0) += 1;
+        acc
+    });
 
-    for n in notifications {
-        *counts.entry(n.subject_type).or_insert(0) += 1;
-    }
-
-    // Return in a consistent order
-    let order = [
-        SubjectType::PullRequest,
-        SubjectType::Issue,
-        SubjectType::Commit,
-        SubjectType::CheckSuite,
-        SubjectType::Discussion,
-        SubjectType::Release,
-        SubjectType::RepositoryVulnerabilityAlert,
-    ];
-
-    order
+    SUBJECT_TYPE_ORDER
         .iter()
-        .filter_map(|t| counts.get(t).map(|c| (*t, *c)))
+        .filter_map(|t| counts.get(t).map(|&c| (*t, c)))
         .collect()
 }
 
 /// Count notifications by repository.
 pub fn count_by_repo(notifications: &[NotificationView]) -> Vec<(String, usize)> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-
+    let mut counts: HashMap<&str, usize> = HashMap::new();
     for n in notifications {
-        *counts.entry(n.repo_full_name.clone()).or_insert(0) += 1;
+        *counts.entry(&n.repo_full_name).or_insert(0) += 1;
     }
 
-    // Sort by count descending, then by name ascending for stability
-    let mut result: Vec<_> = counts.into_iter().collect();
-    result.sort_by(|a, b| {
-        match b.1.cmp(&a.1) {
-            std::cmp::Ordering::Equal => a.0.cmp(&b.0), // alphabetical when equal
-            other => other,
-        }
-    });
+    let mut result: Vec<_> = counts.into_iter().map(|(k, v)| (k.to_owned(), v)).collect();
+
+    result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     result
 }
 

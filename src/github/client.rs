@@ -1,6 +1,6 @@
 //! GitHub API client using Personal Access Tokens.
 
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -80,22 +80,14 @@ impl GitHubClient {
         Ok(Self { client, token })
     }
 
-    /// Fetches the authenticated user's information.
-    /// This is used to validate the token and get user details.
-    pub async fn get_authenticated_user(&self) -> Result<UserInfo, GitHubError> {
-        let url = format!("{}/user", GITHUB_API_URL);
-
-        let response = self.client.get(&url).send().await?;
+    /// Validates and handles the response status.
+    async fn handle_response(
+        response: reqwest::Response,
+    ) -> Result<reqwest::Response, GitHubError> {
         let status = response.status();
 
         if status.is_success() {
-            let user: GitHubUser = response.json().await?;
-            Ok(UserInfo {
-                login: user.login,
-                name: user.name,
-                avatar_url: user.avatar_url,
-                html_url: user.html_url,
-            })
+            Ok(response)
         } else if status.as_u16() == 401 {
             Err(GitHubError::Unauthorized)
         } else if status.as_u16() == 403 {
@@ -112,14 +104,32 @@ impl GitHubClient {
         }
     }
 
+    /// Fetches the authenticated user's information.
+    /// This is used to validate the token and get user details.
+    pub async fn get_authenticated_user(&self) -> Result<UserInfo, GitHubError> {
+        let url = format!("{}/user", GITHUB_API_URL);
+
+        let response = self.client.get(&url).send().await?;
+        let response = Self::handle_response(response).await?;
+
+        let user: GitHubUser = response.json().await?;
+        Ok(UserInfo {
+            login: user.login,
+            name: user.name,
+            avatar_url: user.avatar_url,
+            html_url: user.html_url,
+        })
+    }
+
     /// Validates a token by creating a client and fetching user info.
     /// Returns the client and user info if valid.
     pub async fn validate_token(token: &str) -> Result<(Self, UserInfo), GitHubError> {
         // Basic format validation
-        if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
+        // Basic format validation
+        if let Err(e) = super::auth::validate_token_format(token) {
             return Err(GitHubError::Api {
                 status: 400,
-                message: "Token must start with 'ghp_' or 'github_pat_'".to_string(),
+                message: e.to_string(), // Unwrap the error string
             });
         }
 
@@ -136,24 +146,8 @@ impl GitHubClient {
         );
 
         let response = self.client.get(&url).send().await?;
-        let status = response.status();
-
-        if status.is_success() {
-            Ok(response.json().await?)
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else if status.as_u16() == 403 {
-            Err(GitHubError::RateLimited)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
+        let response = Self::handle_response(response).await?;
+        Ok(response.json().await?)
     }
 
     /// Fetches notifications and converts them to frontend-friendly format.
@@ -179,22 +173,7 @@ impl GitHubClient {
         );
 
         let response = self.client.patch(&url).send().await?;
-        let status = response.status();
-
-        if status.is_success() || status.as_u16() == 205 {
-            Ok(())
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
+        Self::handle_response(response).await.map(|_| ())
     }
 
     /// Marks all notifications as read.
@@ -208,22 +187,7 @@ impl GitHubClient {
             .send()
             .await?;
 
-        let status = response.status();
-
-        if status.is_success() || status.as_u16() == 205 {
-            Ok(())
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
+        Self::handle_response(response).await.map(|_| ())
     }
 
     /// Marks a thread as "done" (removes it from inbox).
@@ -231,48 +195,7 @@ impl GitHubClient {
         let url = format!("{}/notifications/threads/{}", GITHUB_API_URL, thread_id);
 
         let response = self.client.delete(&url).send().await?;
-        let status = response.status();
-
-        if status.is_success() || status.as_u16() == 204 {
-            Ok(())
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
-    }
-
-    /// Deletes the subscription for a thread (mutes future notifications).
-    pub async fn delete_thread_subscription(&self, thread_id: &str) -> Result<(), GitHubError> {
-        let url = format!(
-            "{}/notifications/threads/{}/subscription",
-            GITHUB_API_URL, thread_id
-        );
-
-        let response = self.client.delete(&url).send().await?;
-        let status = response.status();
-
-        if status.is_success() || status.as_u16() == 204 {
-            Ok(())
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
-        }
+        Self::handle_response(response).await.map(|_| ())
     }
 
     /// Fetches Issue details from an API URL.
@@ -284,29 +207,17 @@ impl GitHubClient {
         url: &str,
     ) -> Result<super::subject_details::IssueDetails, GitHubError> {
         let response = self.client.get(url).send().await?;
-        let status = response.status();
 
-        if status.is_success() {
-            Ok(response.json().await?)
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else if status.as_u16() == 403 {
-            Err(GitHubError::RateLimited)
-        } else if status.as_u16() == 404 {
-            Err(GitHubError::Api {
+        let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(GitHubError::Api {
                 status: 404,
                 message: "Issue not found".to_string(),
-            })
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
+            });
         }
+
+        let response = Self::handle_response(response).await?;
+        Ok(response.json().await?)
     }
 
     /// Fetches Pull Request details from an API URL.
@@ -318,29 +229,17 @@ impl GitHubClient {
         url: &str,
     ) -> Result<super::subject_details::PullRequestDetails, GitHubError> {
         let response = self.client.get(url).send().await?;
-        let status = response.status();
 
-        if status.is_success() {
-            Ok(response.json().await?)
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else if status.as_u16() == 403 {
-            Err(GitHubError::RateLimited)
-        } else if status.as_u16() == 404 {
-            Err(GitHubError::Api {
+        let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(GitHubError::Api {
                 status: 404,
                 message: "Pull request not found".to_string(),
-            })
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
+            });
         }
+
+        let response = Self::handle_response(response).await?;
+        Ok(response.json().await?)
     }
 
     /// Fetches Comment details from an API URL.
@@ -351,29 +250,17 @@ impl GitHubClient {
         url: &str,
     ) -> Result<super::subject_details::CommentDetails, GitHubError> {
         let response = self.client.get(url).send().await?;
-        let status = response.status();
 
-        if status.is_success() {
-            Ok(response.json().await?)
-        } else if status.as_u16() == 401 {
-            Err(GitHubError::Unauthorized)
-        } else if status.as_u16() == 403 {
-            Err(GitHubError::RateLimited)
-        } else if status.as_u16() == 404 {
-            Err(GitHubError::Api {
+        let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(GitHubError::Api {
                 status: 404,
                 message: "Comment not found".to_string(),
-            })
-        } else {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            Err(GitHubError::Api {
-                status: status.as_u16(),
-                message,
-            })
+            });
         }
+
+        let response = Self::handle_response(response).await?;
+        Ok(response.json().await?)
     }
 
     /// Fetches notification subject details based on type.
@@ -395,14 +282,14 @@ impl GitHubClient {
         use super::types::{NotificationReason, SubjectType};
 
         // For "mention" reason, prioritize showing the comment that mentioned the user
-        if reason == NotificationReason::Mention {
-            if let Some(comment_url) = latest_comment_url {
-                let comment = self.get_comment(comment_url).await?;
-                return Ok(NotificationSubjectDetail::Comment {
-                    comment,
-                    context_title: title.to_string(),
-                });
-            }
+        if reason == NotificationReason::Mention
+            && let Some(comment_url) = latest_comment_url
+        {
+            let comment = self.get_comment(comment_url).await?;
+            return Ok(NotificationSubjectDetail::Comment {
+                comment,
+                context_title: title.to_string(),
+            });
         }
 
         match subject_type {
@@ -436,17 +323,11 @@ impl GitHubClient {
             SubjectType::Discussion => {
                 // Try to extract owner/repo/number from subject URL
                 // Format: https://api.github.com/repos/{owner}/{repo}/discussions/{number}
-                if let Some(url) = subject_url {
-                    if let Some((owner, repo, number)) = parse_discussion_url(url) {
-                        match self.get_discussion(&owner, &repo, number).await {
-                            Ok(discussion) => {
-                                return Ok(NotificationSubjectDetail::Discussion(discussion))
-                            }
-                            Err(_) => {
-                                // Fall back to minimal details on error
-                            }
-                        }
-                    }
+                if let Some(url) = subject_url
+                    && let Some((owner, repo, number)) = parse_discussion_url(url)
+                    && let Ok(discussion) = self.get_discussion(&owner, &repo, number).await
+                {
+                    return Ok(NotificationSubjectDetail::Discussion(discussion));
                 }
                 // Fallback: minimal discussion details
                 Ok(NotificationSubjectDetail::Discussion(
@@ -563,15 +444,34 @@ impl GitHubClient {
 
 /// Parse discussion URL to extract owner, repo, and number.
 /// Format: https://api.github.com/repos/{owner}/{repo}/discussions/{number}
+/// Parse discussion URL to extract owner, repo, and number.
+/// Format: https://api.github.com/repos/{owner}/{repo}/discussions/{number}
 fn parse_discussion_url(url: &str) -> Option<(String, String, u64)> {
-    let parts: Vec<&str> = url.split('/').collect();
+    let mut parts = url.split('/');
     // Expected: ["https:", "", "api.github.com", "repos", "{owner}", "{repo}", "discussions", "{number}"]
-    if parts.len() >= 8 && parts[6] == "discussions" {
-        let owner = parts[4].to_string();
-        let repo = parts[5].to_string();
-        let number = parts[7].parse().ok()?;
-        Some((owner, repo, number))
-    } else {
-        None
+
+    // Skip protocol, empty, host, "repos" -> 4 items
+    if parts.next()? != "https:" {
+        return None;
     }
+    if !parts.next()?.is_empty() {
+        return None;
+    }
+    if parts.next()? != "api.github.com" {
+        return None;
+    }
+    if parts.next()? != "repos" {
+        return None;
+    }
+
+    let owner = parts.next()?.to_string();
+    let repo = parts.next()?.to_string();
+
+    if parts.next()? != "discussions" {
+        return None;
+    }
+
+    let number = parts.next()?.parse().ok()?;
+
+    Some((owner, repo, number))
 }

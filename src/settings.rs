@@ -19,19 +19,14 @@ pub enum IconTheme {
 /// Visual theme preset.
 /// Platform-aware defaults: Linux uses GTK, Windows uses Windows11, macOS uses native.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum AppTheme {
-    /// Clean light theme
-    Light,
-    /// Dark theme with blue-grey tones (inspired by Steam)
-    Steam,
-    /// GTK Adwaita-inspired dark theme (best for Linux)
-    GtkDark,
-    /// Windows 11 Fluent dark theme
-    Windows11,
-    /// macOS-inspired dark theme
-    MacOS,
-    /// High contrast for accessibility
-    HighContrast,
+    Light = 0,
+    Steam = 1,
+    GtkDark = 2,
+    Windows11 = 3,
+    MacOS = 4,
+    HighContrast = 5,
 }
 
 impl Default for AppTheme {
@@ -77,28 +72,23 @@ impl AppTheme {
         }
     }
 
-    /// Convert to u8 for atomic storage.
     pub fn to_u8(self) -> u8 {
-        match self {
-            Self::Light => 0,
-            Self::Steam => 1,
-            Self::GtkDark => 2,
-            Self::Windows11 => 3,
-            Self::MacOS => 4,
-            Self::HighContrast => 5,
-        }
+        self as u8
     }
+}
 
-    /// Convert from u8 (from atomic storage).
-    pub fn from_u8(value: u8) -> Self {
+impl TryFrom<u8> for AppTheme {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Self::Light,
-            1 => Self::Steam,
-            2 => Self::GtkDark,
-            3 => Self::Windows11,
-            4 => Self::MacOS,
-            5 => Self::HighContrast,
-            _ => Self::platform_default(),
+            0 => Ok(Self::Light),
+            1 => Ok(Self::Steam),
+            2 => Ok(Self::GtkDark),
+            3 => Ok(Self::Windows11),
+            4 => Ok(Self::MacOS),
+            5 => Ok(Self::HighContrast),
+            v => Err(v),
         }
     }
 }
@@ -212,29 +202,25 @@ impl AppSettings {
             .unwrap_or_default()
     }
 
-    /// Save settings to disk.
     pub fn save(&self) -> Result<(), std::io::Error> {
-        if let Some(path) = Self::settings_path() {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let content = serde_json::to_string_pretty(self)?;
-            fs::write(path, content)?;
+        let path = Self::settings_path().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No config directory")
+        })?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
         }
-        Ok(())
+        fs::write(path, serde_json::to_string_pretty(self)?)
     }
 
-    /// Add or update an account.
     pub fn set_active_account(&mut self, username: &str) {
-        // Deactivate all accounts first
+        let mut found = false;
         for acc in &mut self.accounts {
-            acc.is_active = false;
+            acc.is_active = acc.username == username;
+            found |= acc.is_active;
         }
 
-        // Find or add the account
-        if let Some(acc) = self.accounts.iter_mut().find(|a| a.username == username) {
-            acc.is_active = true;
-        } else {
+        if !found {
             self.accounts.push(StoredAccount {
                 username: username.to_string(),
                 is_active: true,

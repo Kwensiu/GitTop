@@ -20,7 +20,7 @@ pub enum RuleEngineMessage {
     ToggleAccountEnabled(String, bool),
 
     // Weekly Schedule Grid
-    ToggleAccountDay(String, u8), // id, day(0-6)
+    ToggleAccountDay(String, chrono::Weekday), // id, day
 
     // Time Windows
     SetAccountTimeWindow(String, Option<String>, Option<String>), // id, start, end
@@ -66,6 +66,12 @@ pub enum RuleEngineMessage {
     // Explain Decision
     /// Set the test notification type for explain decision
     SetExplainTestType(String),
+
+    /// Toggle the handbook/help popup
+    ToggleHandbook,
+
+    /// No-op message (used to block event propagation)
+    NoOp,
 }
 
 /// Rule Engine tabs for navigation.

@@ -5,13 +5,14 @@ use std::time::Duration;
 use iced::window::Id as WindowId;
 use iced::{Element, Event, Subscription, Task, Theme, event, exit, time, window};
 
-use crate::github::{AuthManager, SessionManager};
+use crate::github::{SessionManager, auth};
 use crate::settings::AppSettings;
 use crate::tray::{TrayCommand, TrayManager};
 use crate::ui::screens::settings::rule_engine::rules::NotificationRuleSet;
 use crate::ui::screens::{
     login::{LoginMessage, LoginScreen},
-    notifications::{NotificationMessage, NotificationsScreen},
+    notifications::NotificationsScreen,
+    notifications::messages::{NavigationMessage, NotificationMessage},
     settings::{
         SettingsMessage, SettingsScreen,
         rule_engine::{RuleEngineMessage, RuleEngineScreen},
@@ -64,6 +65,23 @@ pub enum Screen {
     RuleEngine(RuleEngineScreen, RuleEngineOrigin),
 }
 
+impl Screen {
+    fn title(&self) -> String {
+        match self {
+            Screen::Notifications(screen) => {
+                let unread = screen.all_notifications.iter().filter(|n| n.unread).count();
+                if unread > 0 {
+                    format!("GitTop ({unread} unread)")
+                } else {
+                    "GitTop".into()
+                }
+            }
+            Screen::Settings(_) => "GitTop - Settings".into(),
+            Screen::RuleEngine(_, _) => "GitTop - Rule Engine".into(),
+        }
+    }
+}
+
 /// Application state - which screen we're on.
 pub enum App {
     /// Checking for existing auth on startup.
@@ -108,6 +126,17 @@ pub enum Message {
     /// Window event.
     WindowEvent(WindowId, window::Event),
 }
+
+/// Windows reports these values when window is minimized.
+const MINIMIZED_POSITION_THRESHOLD: f32 = -10000.0;
+const MINIMIZED_SIZE_THRESHOLD: f32 = 100.0;
+
+/// Polling intervals in milliseconds.
+const TRAY_POLL_INTERVAL_HIDDEN_MS: u64 = 500;
+const TRAY_POLL_INTERVAL_ACTIVE_MS: u64 = 100;
+
+/// Auto-refresh interval for notifications.
+const REFRESH_INTERVAL_SECS: u64 = 60;
 
 impl App {
     /// Create the app and start the restore task.
@@ -196,30 +225,33 @@ impl App {
             return Task::none();
         };
 
-        // Check for successful login
-        if let LoginMessage::LoginSuccess(client, user) = login_msg.clone() {
-            let mut settings = AppSettings::load();
-            settings.set_active_account(&user.login);
-            settings.save_silent();
-            settings.apply_theme();
+        match login_msg {
+            LoginMessage::LoginSuccess(client, user) => {
+                let mut settings = AppSettings::load();
+                settings.set_active_account(&user.login);
+                settings.save_silent();
+                settings.apply_theme();
 
-            // Save token to new keyring system
-            let token = client.token().to_string();
-            let username = user.login.clone();
-            let _ = crate::github::AccountKeyring::save_token(&username, &token);
+                let token = client.token().to_string();
+                let _ = crate::github::keyring::save_token(&user.login, &token);
 
-            // Create session manager with this account
-            let sessions = SessionManager::new();
-            // Note: Session will be restored on next app launch from keyring
-
-            let (notif_screen, task) = NotificationsScreen::new(client, user);
-            let ctx = AppContext::new(settings, sessions);
-            *self =
-                App::Authenticated(Box::new(Screen::Notifications(Box::new(notif_screen))), ctx);
-            return task.map(Message::Notifications);
+                // Create session and add to manager so navigation works
+                let mut sessions = SessionManager::new();
+                sessions.add_session(crate::github::session::Session {
+                    username: user.login.clone(),
+                    client: client.clone(),
+                    user: user.clone(),
+                });
+                let (notif_screen, task) = NotificationsScreen::new(client, user);
+                let ctx = AppContext::new(settings, sessions);
+                *self = App::Authenticated(
+                    Box::new(Screen::Notifications(Box::new(notif_screen))),
+                    ctx,
+                );
+                task.map(Message::Notifications)
+            }
+            other => screen.update(other).map(Message::Login),
         }
-
-        screen.update(login_msg).map(Message::Login)
     }
 
     fn update_notifications(&mut self, message: Message) -> Task<Message> {
@@ -236,25 +268,27 @@ impl App {
         };
 
         match notif_msg {
-            NotificationMessage::Logout => {
+            NotificationMessage::Navigation(NavigationMessage::Logout) => {
                 // Collect usernames as owned strings first to avoid borrow issues
                 let usernames: Vec<String> = ctx.sessions.usernames().map(String::from).collect();
                 for username in usernames {
                     let _ = ctx.sessions.remove_account(&username);
                 }
                 // Also clean up old auth
-                let _ = AuthManager::delete_token();
+                let _ = auth::delete_token();
                 *self = App::Login(LoginScreen::new());
                 Task::none()
             }
 
-            NotificationMessage::OpenSettings => self.go_to_settings(),
+            NotificationMessage::Navigation(NavigationMessage::OpenSettings) => {
+                self.go_to_settings()
+            }
 
-            NotificationMessage::OpenRuleEngine => {
+            NotificationMessage::Navigation(NavigationMessage::OpenRuleEngine) => {
                 self.go_to_rule_engine(RuleEngineOrigin::Notifications)
             }
 
-            NotificationMessage::SwitchAccount(username) => {
+            NotificationMessage::Navigation(NavigationMessage::SwitchAccount(username)) => {
                 // Skip if already on this account
                 if ctx
                     .sessions
@@ -288,16 +322,15 @@ impl App {
                 task.map(Message::Notifications)
             }
 
-            NotificationMessage::TogglePowerMode => {
-                let enabling = !ctx.settings.power_mode;
-                ctx.settings.power_mode = enabling;
+            NotificationMessage::Navigation(NavigationMessage::TogglePowerMode) => {
+                ctx.settings.power_mode = !ctx.settings.power_mode;
                 ctx.settings.save_silent();
                 screen.collapse_all_groups();
 
-                if enabling {
-                    return window_state::resize_for_power_mode();
-                }
-                Task::none()
+                ctx.settings
+                    .power_mode
+                    .then(window_state::resize_for_power_mode)
+                    .unwrap_or_else(Task::none)
             }
 
             other => screen.update(other).map(Message::Notifications),
@@ -324,8 +357,10 @@ impl App {
                 }
                 Err(e) => {
                     eprintln!("Failed to restore session: {}", e);
-                    screen.accounts_state.error_message =
-                        Some(format!("Failed to activate account: {}", e));
+                    screen.accounts_state.status =
+                        crate::ui::screens::settings::tabs::accounts::SubmissionStatus::Error(
+                            format!("Failed to restore session: {}", e),
+                        );
                 }
             }
             return Task::none();
@@ -356,28 +391,36 @@ impl App {
             SettingsMessage::RemoveAccount(username) => {
                 // Remove from active sessions
                 let _ = ctx.sessions.remove_account(username);
+                // Also remove from ctx.settings to keep them in sync
+                ctx.settings.remove_account(username);
+                ctx.settings.save_silent();
 
                 // If no accounts left, logout
                 if ctx.sessions.primary().is_none() {
-                    let _ = AuthManager::delete_token();
+                    let _ = auth::delete_token();
                     *self = App::Login(LoginScreen::new());
                     return Task::none();
                 }
 
                 // If we still have an account, ensure settings match the new primary
                 if let Some(primary) = ctx.sessions.primary() {
-                    screen
-                        .settings
-                        .set_active_account(&primary.username.clone());
-                    screen.settings.save_silent();
+                    ctx.settings.set_active_account(&primary.username);
+                    ctx.settings.save_silent();
                 }
+                // Keep screen.settings in sync with ctx.settings
+                screen.settings = ctx.settings.clone();
+                return Task::none();
             }
 
             SettingsMessage::TokenValidated(Ok(username)) => {
                 let username = username.clone();
-                return Task::perform(
+                // First update the screen to show success status
+                let screen_task = screen.update(settings_msg).map(Message::Settings);
+
+                // Then start session restoration in parallel
+                let restore_task = Task::perform(
                     async move {
-                        let token = crate::github::AccountKeyring::load_token(&username)
+                        let token = crate::github::keyring::load_token(&username)
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| "Token not found in keyring".to_string())?;
 
@@ -396,6 +439,7 @@ impl App {
                     },
                     Message::SessionRestored,
                 );
+                return Task::batch([screen_task, restore_task]);
             }
 
             _ => {}
@@ -450,16 +494,18 @@ impl App {
     // ========================================================================
 
     fn handle_tick(&mut self) -> Task<Message> {
-        if let App::Authenticated(boxed_screen, _) = self {
-            if let Screen::Notifications(screen) = &mut **boxed_screen {
-                if !screen.is_loading {
-                    return screen
-                        .update(NotificationMessage::Refresh)
-                        .map(Message::Notifications);
-                }
-            }
+        let App::Authenticated(boxed_screen, _) = self else {
+            return Task::none();
+        };
+        let Screen::Notifications(screen) = &mut **boxed_screen else {
+            return Task::none();
+        };
+        if screen.is_loading {
+            return Task::none();
         }
-        Task::none()
+        screen
+            .update(NotificationMessage::Refresh)
+            .map(Message::Notifications)
     }
 
     fn handle_tray_poll(&mut self) -> Task<Message> {
@@ -471,30 +517,26 @@ impl App {
             TrayCommand::ShowWindow => {
                 let was_hidden = window_state::restore_from_hidden();
 
-                let window_task = if let Some(id) = window_state::get_window_id() {
-                    Task::batch([
-                        window::set_mode(id, window::Mode::Windowed),
-                        window::gain_focus(id),
-                    ])
-                } else {
-                    Task::none()
-                };
+                let window_task = window_state::get_window_id()
+                    .map(|id| {
+                        Task::batch([
+                            window::set_mode(id, window::Mode::Windowed),
+                            window::gain_focus(id),
+                        ])
+                    })
+                    .unwrap_or_else(Task::none);
 
-                // If coming back from hidden, trigger a refresh
-                if was_hidden {
-                    if let App::Authenticated(boxed_screen, _) = self {
-                        if let Screen::Notifications(screen) = &mut **boxed_screen {
-                            return Task::batch([
-                                window_task,
-                                screen
-                                    .update(NotificationMessage::Refresh)
-                                    .map(Message::Notifications),
-                            ]);
-                        }
-                    }
-                }
+                let refresh_task = was_hidden
+                    .then(|| self.notification_screen_mut())
+                    .flatten()
+                    .map(|screen| {
+                        screen
+                            .update(NotificationMessage::Refresh)
+                            .map(Message::Notifications)
+                    })
+                    .unwrap_or_else(Task::none);
 
-                window_task
+                Task::batch([window_task, refresh_task])
             }
             TrayCommand::Quit => exit(),
         }
@@ -505,7 +547,10 @@ impl App {
 
         match event {
             window::Event::CloseRequested => {
-                let minimize_to_tray = self.get_minimize_to_tray_setting();
+                let minimize_to_tray = self
+                    .current_settings()
+                    .map(|s| s.minimize_to_tray)
+                    .unwrap_or(false);
 
                 if minimize_to_tray {
                     self.enter_tray_mode(id)
@@ -515,25 +560,25 @@ impl App {
             }
 
             window::Event::Moved(position) => {
-                // Windows reports -32000, -32000 when window is minimized - ignore these
-                if position.x > -10000.0 && position.y > -10000.0 {
-                    if let Some(settings) = self.get_settings_mut() {
-                        settings.window_x = Some(position.x as i32);
-                        settings.window_y = Some(position.y as i32);
-                        settings.save_silent();
-                    }
+                let valid = position.x > MINIMIZED_POSITION_THRESHOLD
+                    && position.y > MINIMIZED_POSITION_THRESHOLD;
+
+                if let Some(s) = valid.then(|| self.settings_mut()).flatten() {
+                    s.window_x = Some(position.x as i32);
+                    s.window_y = Some(position.y as i32);
+                    s.save_silent();
                 }
                 Task::none()
             }
 
             window::Event::Resized(size) => {
-                // Windows reports 0x0 when window is minimized - ignore these
-                if size.width > 100.0 && size.height > 100.0 {
-                    if let Some(settings) = self.get_settings_mut() {
-                        settings.window_width = size.width;
-                        settings.window_height = size.height;
-                        settings.save_silent();
-                    }
+                let valid =
+                    size.width > MINIMIZED_SIZE_THRESHOLD && size.height > MINIMIZED_SIZE_THRESHOLD;
+
+                if let Some(s) = valid.then(|| self.settings_mut()).flatten() {
+                    s.window_width = size.width;
+                    s.window_height = size.height;
+                    s.save_silent();
                 }
                 Task::none()
             }
@@ -546,20 +591,23 @@ impl App {
     // Navigation Helpers
     // ========================================================================
 
-    /// Get settings, syncing from SettingsScreen if that's the current screen.
-    fn synced_settings(&self) -> AppSettings {
-        match self {
-            App::Authenticated(screen, ctx) => match &**screen {
-                Screen::Settings(s) => s.settings.clone(),
-                _ => ctx.settings.clone(),
-            },
-            _ => AppSettings::load(),
-        }
+    /// Get current settings, preferring SettingsScreen's copy if active.
+    fn current_settings(&self) -> Option<&AppSettings> {
+        let App::Authenticated(screen, ctx) = self else {
+            return None;
+        };
+        Some(match &**screen {
+            Screen::Settings(s) => &s.settings,
+            _ => &ctx.settings,
+        })
     }
 
     /// Navigate to the notifications screen.
     fn go_to_notifications(&mut self) -> Task<Message> {
-        let settings = self.synced_settings();
+        let settings = self
+            .current_settings()
+            .cloned()
+            .unwrap_or_else(AppSettings::load);
 
         let App::Authenticated(_, ctx) = self else {
             return Task::none();
@@ -595,7 +643,10 @@ impl App {
 
     /// Navigate to the rule engine screen.
     fn go_to_rule_engine(&mut self, origin: RuleEngineOrigin) -> Task<Message> {
-        let settings = self.synced_settings();
+        let settings = self
+            .current_settings()
+            .cloned()
+            .unwrap_or_else(AppSettings::load);
 
         let App::Authenticated(_, ctx) = self else {
             return Task::none();
@@ -618,44 +669,34 @@ impl App {
     fn enter_tray_mode(&mut self, window_id: WindowId) -> Task<Message> {
         window_state::set_hidden(true);
 
-        // Clear notification data to free memory
-        if let App::Authenticated(boxed_screen, _) = self {
-            if let Screen::Notifications(screen) = &mut **boxed_screen {
-                // Use the aggressive low-memory mode
-                screen.enter_low_memory_mode();
-            }
+        if let Some(screen) = self.notification_screen_mut() {
+            screen.enter_low_memory_mode();
         }
 
-        // Aggressively trim memory
         crate::platform::trim_memory();
-
         window::set_mode(window_id, window::Mode::Hidden)
     }
 
-    // ========================================================================
-    // Settings Helpers
-    // ========================================================================
-
-    /// Get the minimize_to_tray setting from current state.
-    fn get_minimize_to_tray_setting(&self) -> bool {
-        match self {
-            App::Authenticated(boxed_screen, ctx) => match &**boxed_screen {
-                Screen::Settings(screen) => screen.settings.minimize_to_tray,
-                _ => ctx.settings.minimize_to_tray,
-            },
-            _ => AppSettings::load().minimize_to_tray,
-        }
+    /// Get mutable reference to settings.
+    fn settings_mut(&mut self) -> Option<&mut AppSettings> {
+        let App::Authenticated(boxed_screen, ctx) = self else {
+            return None;
+        };
+        Some(match &mut **boxed_screen {
+            Screen::Settings(screen) => &mut screen.settings,
+            _ => &mut ctx.settings,
+        })
     }
 
-    /// Get mutable reference to settings if available.
-    fn get_settings_mut(&mut self) -> Option<&mut AppSettings> {
-        match self {
-            App::Authenticated(boxed_screen, ctx) => match &mut **boxed_screen {
-                Screen::Settings(screen) => Some(&mut screen.settings),
-                _ => Some(&mut ctx.settings),
-            },
-            _ => None,
-        }
+    /// Get mutable reference to notifications screen if active.
+    fn notification_screen_mut(&mut self) -> Option<&mut NotificationsScreen> {
+        let App::Authenticated(boxed, _) = self else {
+            return None;
+        };
+        let Screen::Notifications(s) = &mut **boxed else {
+            return None;
+        };
+        Some(s)
     }
 
     // ========================================================================
@@ -771,24 +812,9 @@ impl App {
     /// Window title.
     pub fn title(&self) -> String {
         match self {
-            App::Loading => "GitTop".to_string(),
-            App::Login(_) => "GitTop - Sign In".to_string(),
-            App::Authenticated(boxed_screen, _) => match &**boxed_screen {
-                Screen::Notifications(notif_screen) => {
-                    let unread = notif_screen
-                        .all_notifications
-                        .iter()
-                        .filter(|n| n.unread)
-                        .count();
-                    if unread > 0 {
-                        format!("GitTop ({} unread)", unread)
-                    } else {
-                        "GitTop".to_string()
-                    }
-                }
-                Screen::Settings(_) => "GitTop - Settings".to_string(),
-                Screen::RuleEngine(_, _) => "GitTop - Rule Engine".to_string(),
-            },
+            App::Loading => "GitTop".into(),
+            App::Login(_) => "GitTop - Sign In".into(),
+            App::Authenticated(screen, _) => (**screen).title(),
         }
     }
 
@@ -801,33 +827,29 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let is_hidden = window_state::is_hidden();
 
-        // Tray polling - slower when hidden to save CPU
-        let tray_interval = if is_hidden { 500 } else { 100 };
+        let tray_interval = if is_hidden {
+            TRAY_POLL_INTERVAL_HIDDEN_MS
+        } else {
+            TRAY_POLL_INTERVAL_ACTIVE_MS
+        };
+
         let tray_sub = time::every(Duration::from_millis(tray_interval)).map(|_| Message::TrayPoll);
 
-        // Window events
-        let window_sub = event::listen_with(|event, _status, id| {
-            if let Event::Window(e) = event {
-                Some(Message::WindowEvent(id, e))
-            } else {
-                None
-            }
+        let window_sub = event::listen_with(|event, _status, id| match event {
+            Event::Window(e) => Some(Message::WindowEvent(id, e)),
+            _ => None,
         });
 
-        // Refresh tick only on notifications screen (60s interval regardless of visibility)
         let on_notifications = matches!(
             self,
             App::Authenticated(screen, _) if matches!(&**screen, Screen::Notifications(_))
         );
 
-        if on_notifications {
-            Subscription::batch([
-                time::every(Duration::from_secs(60)).map(|_| Message::Tick),
-                tray_sub,
-                window_sub,
-            ])
-        } else {
-            Subscription::batch([tray_sub, window_sub])
-        }
+        let tick_sub = on_notifications.then(|| {
+            time::every(Duration::from_secs(REFRESH_INTERVAL_SECS)).map(|_| Message::Tick)
+        });
+
+        let subs: Vec<_> = tick_sub.into_iter().chain([tray_sub, window_sub]).collect();
+        Subscription::batch(subs)
     }
 }

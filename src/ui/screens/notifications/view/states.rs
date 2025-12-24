@@ -1,6 +1,6 @@
 //! Notification screen state views (loading, error, empty).
 
-use iced::widget::{button, column, container, text, Space};
+use iced::widget::{Space, button, column, container, text};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
@@ -51,13 +51,21 @@ pub fn view_error<'a>(error: &'a str, icon_theme: IconTheme) -> Element<'a, Noti
         .into()
 }
 
+/// State for the empty view.
+pub enum EmptyState {
+    NoNotifications,
+    AllCaughtUp,
+}
+
 /// Render the empty state (no notifications).
-pub fn view_empty<'a>(show_all: bool, icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
+pub fn view_empty<'a>(
+    state: EmptyState,
+    icon_theme: IconTheme,
+) -> Element<'a, NotificationMessage> {
     let p = theme::palette();
-    let message = if show_all {
-        "No notifications yet"
-    } else {
-        "All caught up!"
+    let message = match state {
+        EmptyState::NoNotifications => "No notifications yet",
+        EmptyState::AllCaughtUp => "All caught up!",
     };
 
     let content = column![

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use super::client::{GitHubClient, GitHubError};
-use super::keyring::{AccountKeyring, KeyringError};
+use super::keyring::{self, KeyringError};
 use super::types::UserInfo;
 use thiserror::Error;
 
@@ -45,7 +45,7 @@ impl SessionManager {
 
     /// Restore a session for a known username (loads token from keyring).
     pub async fn restore_account(&mut self, username: &str) -> Result<(), SessionError> {
-        let token = AccountKeyring::load_token(username)?
+        let token = keyring::load_token(username)?
             .ok_or_else(|| SessionError::AccountNotFound(username.to_string()))?;
 
         // Validate the token using GitHubClient
@@ -53,7 +53,7 @@ impl SessionManager {
             Ok((client, user)) => (client, user),
             Err(GitHubError::Unauthorized) => {
                 // Token expired, clean up
-                let _ = AccountKeyring::delete_token(username);
+                let _ = keyring::delete_token(username);
                 return Err(SessionError::AccountNotFound(username.to_string()));
             }
             Err(e) => return Err(SessionError::GitHub(e)),
@@ -79,7 +79,7 @@ impl SessionManager {
     /// Remove an account (also deletes from keyring).
     pub fn remove_account(&mut self, username: &str) -> Result<(), SessionError> {
         self.sessions.remove(username);
-        AccountKeyring::delete_token(username)?;
+        keyring::delete_token(username)?;
 
         // If we removed the primary, pick a new one
         if self.primary.as_deref() == Some(username) {
@@ -109,11 +109,8 @@ impl SessionManager {
     /// Get mutable primary session.
     #[allow(dead_code)]
     pub fn primary_mut(&mut self) -> Option<&mut Session> {
-        if let Some(name) = self.primary.clone() {
-            self.sessions.get_mut(&name)
-        } else {
-            None
-        }
+        let name = self.primary.as_ref()?;
+        self.sessions.get_mut(name)
     }
 
     /// Set which account is primary.

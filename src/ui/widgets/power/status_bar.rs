@@ -1,10 +1,10 @@
 //! Status Bar widget - System health and background tasks.
 
-use iced::widget::{button, container, row, text, Space};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
-use crate::ui::screens::notifications::NotificationMessage;
+use crate::ui::screens::notifications::messages::{NavigationMessage, NotificationMessage};
 use crate::ui::{icons, theme};
 
 pub fn view_status_bar<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
@@ -20,7 +20,9 @@ pub fn view_status_bar<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMes
     )
     .style(theme::ghost_button)
     .padding([2, 8])
-    .on_press(NotificationMessage::OpenRuleEngine);
+    .on_press(NotificationMessage::Navigation(
+        NavigationMessage::OpenRuleEngine,
+    ));
 
     container(
         row![
@@ -30,7 +32,12 @@ pub fn view_status_bar<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMes
             Space::new().width(Fill),
             rule_engine_btn,
             Space::new().width(12),
-            text("Power Mode").size(11).color(p.text_muted),
+            button(text("Power Mode").size(11).color(p.text_muted))
+                .style(theme::ghost_button)
+                .padding([2, 8])
+                .on_press(NotificationMessage::Navigation(
+                    NavigationMessage::TogglePowerMode,
+                )),
         ]
         .align_y(Alignment::Center)
         .padding([4, 12]),

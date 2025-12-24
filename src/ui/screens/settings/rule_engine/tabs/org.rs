@@ -1,6 +1,6 @@
 //! Organization Rules tab for Rule Engine.
 
-use iced::widget::{column, text, Space};
+use iced::widget::{Space, column, text};
 use iced::{Element, Fill};
 
 use crate::settings::IconTheme;
@@ -16,26 +16,31 @@ pub fn view_org_rules_tab(
 ) -> Element<'static, RuleEngineMessage> {
     let p = theme::palette();
 
-    let mut content = column![
+    let rules_list: Element<_> = if rules.org_rules.is_empty() {
+        view_empty_state(
+            "No organization rules configured. Organizations will be auto-discovered from your notifications.",
+            icon_theme,
+        ).into()
+    } else {
+        column(rules.org_rules.iter().flat_map(|rule| {
+            [
+                view_org_rule_card(rule, icon_theme),
+                Space::new().height(8).into(),
+            ]
+        }))
+        .into()
+    };
+
+    column![
         text("Organization Rules").size(20).color(p.text_primary),
         text("Set priority levels for organizations.")
             .size(12)
             .color(p.text_secondary),
         Space::new().height(16),
+        rules_list,
     ]
-    .spacing(4);
-
-    if rules.org_rules.is_empty() {
-        content = content.push(view_empty_state(
-            "No organization rules configured. Organizations will be auto-discovered from your notifications.",
-            icon_theme,
-        ));
-    } else {
-        for rule in &rules.org_rules {
-            content = content.push(view_org_rule_card(rule, icon_theme));
-            content = content.push(Space::new().height(8));
-        }
-    }
-
-    content.padding(24).width(Fill).into()
+    .spacing(4)
+    .padding(24)
+    .width(Fill)
+    .into()
 }

@@ -1,7 +1,7 @@
 //! Shared components for settings tabs.
 
-use iced::widget::{container, text};
 use iced::Element;
+use iced::widget::{container, text};
 
 use crate::ui::theme;
 

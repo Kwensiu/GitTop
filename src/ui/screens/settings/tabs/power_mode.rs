@@ -1,6 +1,6 @@
 //! Power Mode tab - enterprise features and Rule Engine.
 
-use iced::widget::{button, column, container, row, text, toggler, Space};
+use iced::widget::{Space, button, column, container, row, text, toggler};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::AppSettings;
@@ -45,12 +45,11 @@ fn view_hero(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     let enabled = settings.power_mode;
     let icon_theme = settings.icon_theme;
 
-    let status_color = if enabled {
-        p.accent_success
+    let (status_color, status_text) = if enabled {
+        (p.accent_success, "ACTIVE")
     } else {
-        p.text_muted
+        (p.text_muted, "INACTIVE")
     };
-    let status_text = if enabled { "ACTIVE" } else { "INACTIVE" };
 
     let icon_size = 32.0;
     let icon_color = if enabled { p.accent } else { p.text_muted };
@@ -110,16 +109,16 @@ fn view_hero(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     )
     .width(Fill)
     .style(move |_| {
-        let border_color = if enabled {
-            p.accent.scale_alpha(0.5)
+        let (border_color, border_width) = if enabled {
+            (p.accent.scale_alpha(0.5), 2.0)
         } else {
-            p.border_subtle
+            (p.border_subtle, 1.0)
         };
         container::Style {
             background: Some(iced::Background::Color(p.bg_card)),
             border: iced::Border {
                 radius: 12.0.into(),
-                width: if enabled { 2.0 } else { 1.0 },
+                width: border_width,
                 color: border_color,
             },
             ..Default::default()

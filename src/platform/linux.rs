@@ -42,7 +42,7 @@ pub fn trim_memory() {
 ///
 /// If `url` is provided, adds an "Open" action that opens the URL.
 /// Works with: notify-osd, dunst, xfce4-notifyd, KDE, GNOME, etc.
-pub fn notify(title: &str, body: &str, url: Option<&str>) {
+pub fn notify(title: &str, body: &str, url: Option<&str>) -> Result<(), notify_rust::error::Error> {
     use notify_rust::Notification;
 
     let mut notification = Notification::new();
@@ -58,20 +58,21 @@ pub fn notify(title: &str, body: &str, url: Option<&str>) {
         notification.hint(notify_rust::Hint::ActionIcons(true));
 
         // Show and handle action
-        if let Ok(handle) = notification.show() {
-            // Clone URL for the closure
-            let url_owned = url.to_string();
-            // Spawn a thread to wait for action (non-blocking)
-            std::thread::spawn(move || {
-                handle.wait_for_action(|action| {
-                    if action == "open" || action == "default" {
-                        let _ = open::that(&url_owned);
-                    }
-                });
+        let handle = notification.show()?;
+
+        // Clone URL for the closure
+        let url_owned = url.to_string();
+        // Spawn a thread to wait for action (non-blocking)
+        std::thread::spawn(move || {
+            handle.wait_for_action(|action| {
+                if action == "open" || action == "default" {
+                    let _ = open::that(&url_owned);
+                }
             });
-        }
+        });
+        Ok(())
     } else {
         // Simple fire and forget
-        let _ = notification.show();
+        notification.show().map(|_| ())
     }
 }

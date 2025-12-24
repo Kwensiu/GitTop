@@ -12,7 +12,7 @@ mod tray;
 mod ui;
 
 use iced::window::Position;
-use iced::{application, Font, Point, Size};
+use iced::{Font, Point, Size, application};
 use settings::AppSettings;
 use single_instance::SingleInstance;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -24,18 +24,20 @@ const SINGLE_INSTANCE_MUTEX: &str = "GitTop-SingleInstance-Mutex-7a8b9c0d";
 /// Global mock notification count (set via CLI)
 pub static MOCK_NOTIFICATION_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// Parse CLI arguments for mock data testing.
+/// Minimum valid window dimension (Windows reports 0x0 when minimized)
+const MIN_VALID_WINDOW_SIZE: f32 = 100.0;
+/// Minimum valid window position (Windows reports -32000 when minimized)
+const MIN_VALID_WINDOW_POS: i32 = -10000;
+
 fn parse_cli_args() {
-    let args: Vec<String> = std::env::args().collect();
-    let mut i = 1;
-    while i < args.len() {
-        if (args[i] == "--mock-notifications" || args[i] == "-m") && i + 1 < args.len() {
-            if let Ok(count) = args[i + 1].parse::<usize>() {
+    let mut args = std::env::args().skip(1).peekable();
+
+    while let Some(arg) = args.next() {
+        if matches!(arg.as_str(), "--mock-notifications" | "-m") {
+            if let Some(Ok(count)) = args.next().map(|s| s.parse::<usize>()) {
                 MOCK_NOTIFICATION_COUNT.store(count, Ordering::Relaxed);
             }
-            i += 1;
         }
-        i += 1;
     }
 }
 
@@ -48,35 +50,36 @@ fn main() -> iced::Result {
     // Parse CLI arguments (e.g., --mock-notifications 1000)
     parse_cli_args();
 
-    // Check for existing instance
-    let instance = SingleInstance::new(SINGLE_INSTANCE_MUTEX).unwrap();
+    let instance =
+        SingleInstance::new(SINGLE_INSTANCE_MUTEX).expect("Failed to create single-instance mutex");
 
     if !instance.is_single() {
-        // Another instance is running - try to focus it and exit
         platform::focus_existing_window();
         return Ok(());
     }
 
-    // Enable dark mode for context menus
     platform::enable_dark_mode();
 
-    // Initialize tray icon on main thread (required for macOS)
-    // The tray must be kept alive for the duration of the app
-    let _tray = tray::TrayManager::new().ok();
-
-    // Load settings to restore window state
-    let settings = AppSettings::load();
-
-    // Validate window size (Windows reports 0x0 when minimized)
-    let window_size = if settings.window_width >= 100.0 && settings.window_height >= 100.0 {
-        Size::new(settings.window_width, settings.window_height)
-    } else {
-        Size::new(800.0, 640.0) // Default size
+    let _tray = match tray::TrayManager::new() {
+        Ok(t) => Some(t),
+        Err(e) => {
+            eprintln!("Tray unavailable: {e}");
+            None
+        }
     };
 
-    // Validate window position (Windows reports -32000 when minimized)
+    let settings = AppSettings::load();
+
+    let window_size = if settings.window_width >= MIN_VALID_WINDOW_SIZE
+        && settings.window_height >= MIN_VALID_WINDOW_SIZE
+    {
+        Size::new(settings.window_width, settings.window_height)
+    } else {
+        Size::new(800.0, 640.0)
+    };
+
     let window_position = match (settings.window_x, settings.window_y) {
-        (Some(x), Some(y)) if x > -10000 && y > -10000 => {
+        (Some(x), Some(y)) if x > MIN_VALID_WINDOW_POS && y > MIN_VALID_WINDOW_POS => {
             Position::Specific(Point::new(x as f32, y as f32))
         }
         _ => Position::Centered,

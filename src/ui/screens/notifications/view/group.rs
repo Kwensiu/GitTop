@@ -1,11 +1,11 @@
 //! Notification group component - collapsible time-based groups.
 
-use iced::widget::{button, container, row, text, Space};
-use iced::{Alignment, Color, Element, Fill};
+use iced::widget::{Space, button, container, row, text};
+use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
 use crate::ui::screens::notifications::helper::NotificationGroup;
-use crate::ui::screens::notifications::messages::NotificationMessage;
+use crate::ui::screens::notifications::messages::{NotificationMessage, ViewMessage};
 use crate::ui::{icons, theme};
 
 /// Render a collapsible notification group header.
@@ -47,34 +47,15 @@ pub fn view_group_header<'a>(
             theme::ghost_button
         })
         .padding([6, 8])
-        .on_press(NotificationMessage::ToggleGroup(group_index))
+        .on_press(NotificationMessage::View(ViewMessage::ToggleGroup(
+            group_index,
+        )))
         .width(Fill);
 
-    // Wrap priority headers with subtle background
+    // Wrap priority headers with subtle background from theme
     if group.is_priority {
         container(header_btn)
-            .style(move |_| {
-                let p = theme::palette();
-                container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba(
-                        p.accent_warning.r,
-                        p.accent_warning.g,
-                        p.accent_warning.b,
-                        0.05,
-                    ))),
-                    border: iced::Border {
-                        radius: 6.0.into(),
-                        color: Color::from_rgba(
-                            p.accent_warning.r,
-                            p.accent_warning.g,
-                            p.accent_warning.b,
-                            0.15,
-                        ),
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                }
-            })
+            .style(theme::priority_header_container)
             .into()
     } else {
         header_btn.into()

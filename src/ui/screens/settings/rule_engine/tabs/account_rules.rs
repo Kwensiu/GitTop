@@ -1,7 +1,8 @@
 //! Account Rules tab - New 3-pane design for schedule management.
 
+use chrono::{Local, Weekday};
 use iced::widget::{
-    button, column, container, radio, row, scrollable, text, text_input, toggler, Space,
+    Space, button, column, container, radio, row, scrollable, text, text_input, toggler,
 };
 use iced::{Alignment, Element, Fill, Length};
 use std::collections::HashSet;
@@ -100,8 +101,9 @@ fn view_account_list<'a>(
 
     let list_items = rules.account_rules.iter().map(|rule| {
         let is_selected = selected_id.as_ref() == Some(&rule.id);
+        let now = Local::now();
 
-        let status_color = if rule.is_active_now() && rule.enabled {
+        let status_color = if rule.is_active(&now) && rule.enabled {
             p.accent_success
         } else {
             p.text_muted
@@ -109,10 +111,10 @@ fn view_account_list<'a>(
 
         let status_text = if !rule.enabled {
             "Disabled"
-        } else if rule.is_active_now() {
+        } else if rule.is_active(&now) {
             "Active"
         } else {
-            "Suppressed"
+            "Outside Schedule"
         };
 
         let content = row![
@@ -208,9 +210,18 @@ fn view_schedule_config<'a>(
     ];
 
     // Section 2: Weekly Schedule
-    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; // 0-6
-    let grid_items = (0..7).map(|day_idx| {
-        let is_active = rule.active_days.contains(&day_idx);
+    let days = [
+        ("Sun", Weekday::Sun),
+        ("Mon", Weekday::Mon),
+        ("Tue", Weekday::Tue),
+        ("Wed", Weekday::Wed),
+        ("Thu", Weekday::Thu),
+        ("Fri", Weekday::Fri),
+        ("Sat", Weekday::Sat),
+    ];
+
+    let grid_items = days.iter().map(|(label, day)| {
+        let is_active = rule.active_days.contains(day);
         let color = if is_active {
             p.accent_success
         } else {
@@ -224,9 +235,7 @@ fn view_schedule_config<'a>(
 
         button(
             column![
-                text(days[day_idx as usize])
-                    .size(12)
-                    .color(p.text_secondary),
+                text(*label).size(12).color(p.text_secondary),
                 Space::new().height(8),
                 container(icon)
                     .width(Length::Fixed(24.0))
@@ -244,10 +253,7 @@ fn view_schedule_config<'a>(
             ]
             .align_x(Alignment::Center),
         )
-        .on_press(RuleEngineMessage::ToggleAccountDay(
-            rule.id.clone(),
-            day_idx,
-        ))
+        .on_press(RuleEngineMessage::ToggleAccountDay(rule.id.clone(), *day))
         .style(theme::ghost_button)
         .into()
     });
@@ -293,8 +299,21 @@ fn view_schedule_config<'a>(
     .padding(0);
 
     let time_windows_content = if is_expanded {
-        let start_val = rule.start_time.as_deref().unwrap_or("09:00");
-        let end_val = rule.end_time.as_deref().unwrap_or("17:00");
+        let start_val = rule
+            .start_time
+            .map(|t| t.format("%H:%M").to_string())
+            .unwrap_or_else(|| "09:00".to_string());
+        let end_val = rule
+            .end_time
+            .map(|t| t.format("%H:%M").to_string())
+            .unwrap_or_else(|| "17:00".to_string());
+        // For the setters, we just pass the current value (formatted) if the other one is changed.
+        // But since we are inside a value binding, we simply get the string value to display.
+        // We know we need to pass a valid string to SetAccountTimeWindow.
+        // However, SetAccountTimeWindow expects Option<String>.
+
+        let current_start_str = start_val.clone();
+        let current_end_str = end_val.clone();
 
         column![
             Space::new().height(12),
@@ -302,20 +321,20 @@ fn view_schedule_config<'a>(
             Space::new().height(8),
             row![
                 text("From:").size(13).color(p.text_muted),
-                text_input("09:00", start_val)
+                text_input("09:00", &start_val)
                     .on_input(move |s| RuleEngineMessage::SetAccountTimeWindow(
                         rule.id.clone(),
                         Some(s),
-                        Some(rule.end_time.clone().unwrap_or_default())
+                        Some(current_end_str.clone())
                     ))
                     .width(Length::Fixed(80.0))
                     .padding(6),
                 Space::new().width(16),
                 text("To:").size(13).color(p.text_muted),
-                text_input("17:00", end_val)
+                text_input("17:00", &end_val)
                     .on_input(move |s| RuleEngineMessage::SetAccountTimeWindow(
                         rule.id.clone(),
-                        Some(rule.start_time.clone().unwrap_or_default()),
+                        Some(current_start_str.clone()),
                         Some(s)
                     ))
                     .width(Length::Fixed(80.0))
@@ -341,22 +360,28 @@ fn view_schedule_config<'a>(
         Space::new().height(12),
         column![
             radio(
-                "Suppress notifications",
+                "Hide notifications",
                 OutsideScheduleBehavior::Suppress,
                 Some(rule.outside_behavior),
                 move |b| RuleEngineMessage::SetOutsideScheduleBehavior(rule.id.clone(), b)
             )
             .size(14)
             .spacing(8),
+            text("Notifications are completely hidden from the list.")
+                .size(12)
+                .color(p.text_muted),
             Space::new().height(8),
             radio(
-                "Defer until next active window",
+                "Silent (no desktop notification)",
                 OutsideScheduleBehavior::Defer,
                 Some(rule.outside_behavior),
                 move |b| RuleEngineMessage::SetOutsideScheduleBehavior(rule.id.clone(), b)
             )
             .size(14)
             .spacing(8),
+            text("Notifications appear in the list but don't trigger desktop alerts.")
+                .size(12)
+                .color(p.text_muted),
         ]
     ];
 
@@ -393,25 +418,26 @@ fn view_account_details<'a>(
 ) -> Element<'a, RuleEngineMessage> {
     let p = theme::palette();
 
+    let now = Local::now();
     let status_label = if !rule.enabled {
         "Disabled"
-    } else if rule.is_active_now() {
+    } else if rule.is_active(&now) {
         "Active"
     } else {
-        "Suppressed"
+        "Outside Schedule"
     };
 
     let reason_label = if !rule.enabled {
         "Account is disabled"
-    } else if rule.is_active_now() {
+    } else if rule.is_active(&now) {
         "Within active schedule"
     } else {
         "Outside active window"
     };
 
     let active_days_count = rule.active_days.len();
-    let hours_label = if let (Some(s), Some(e)) = (&rule.start_time, &rule.end_time) {
-        format!("{} - {}", s, e)
+    let hours_label = if let (Some(s), Some(e)) = (rule.start_time, rule.end_time) {
+        format!("{} - {}", s.format("%H:%M"), e.format("%H:%M"))
     } else {
         "All day".to_string()
     };
@@ -446,7 +472,7 @@ fn view_account_details<'a>(
             ..Default::default()
         }),
         Space::new().height(8),
-        text("• Priority rules (e.g. Org, Type) still apply")
+        text("• Important rules (e.g. Org, Type) still apply")
             .size(13)
             .color(p.text_muted),
         text("• Notifications will be delivered when account becomes active")

@@ -3,7 +3,7 @@
 mod components;
 mod messages;
 mod screen;
-mod tabs;
+pub mod tabs;
 
 pub use messages::SettingsMessage;
 pub use screen::SettingsScreen;

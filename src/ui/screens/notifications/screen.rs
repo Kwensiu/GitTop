@@ -19,11 +19,13 @@ use crate::ui::window_state;
 
 use super::engine::{DesktopNotificationBatch, NotificationEngine};
 use super::helper::{
-    api_url_to_web_url, apply_filters, count_by_repo, count_by_type, group_processed_notifications,
-    FilterSettings, NotificationGroup, ProcessedNotification,
+    FilterSettings, NotificationGroup, ProcessedNotification, api_url_to_web_url, apply_filters,
+    count_by_repo, count_by_type, group_processed_notifications,
 };
-use super::messages::NotificationMessage;
-use super::view::{view_sidebar, SidebarState};
+use super::messages::{
+    BulkMessage, FilterMessage, NavigationMessage, NotificationMessage, ThreadMessage, ViewMessage,
+};
+use super::view::{SidebarState, view_sidebar};
 
 use std::collections::{HashMap, HashSet};
 
@@ -50,7 +52,7 @@ pub struct NotificationsScreen {
     seen_notification_timestamps: HashMap<String, chrono::DateTime<chrono::Utc>>,
     /// Cached rule set for evaluation.
     rules: NotificationRuleSet,
-    /// Priority notifications from ALL accounts (persists across account switches).
+    /// Important notifications from ALL accounts (persists across account switches).
     /// These are always shown at the top, regardless of current account.
     cross_account_priority: Vec<ProcessedNotification>,
     /// Virtual scrolling: current scroll offset in pixels.
@@ -168,19 +170,19 @@ impl NotificationsScreen {
         self.rebuild_groups();
     }
 
-    /// Extract priority notifications from current account and add to cross-account store.
-    /// Only tracks UNREAD priority notifications.
+    /// Extract Important notifications from current account and add to cross-account store.
+    /// Only tracks UNREAD Important notifications.
     fn update_cross_account_priority(&mut self) {
-        // Get unread priority notifications from current account's processed list
+        // Get unread Important notifications from current account's processed list
         let current_priority: Vec<ProcessedNotification> = self
             .processed_notifications
             .iter()
-            .filter(|p| p.action == RuleAction::Priority && p.notification.unread)
+            .filter(|p| p.action == RuleAction::Important && p.notification.unread)
             .cloned()
             .collect();
 
         eprintln!(
-            "[DEBUG] update_cross_account_priority: found {} priority from current account @{}",
+            "[DEBUG] update_cross_account_priority: found {} important from current account @{}",
             current_priority.len(),
             self.user.login
         );
@@ -191,7 +193,7 @@ impl NotificationsScreen {
         self.cross_account_priority
             .retain(|p| p.notification.account != *current_account);
 
-        // Add current account's unread priority notifications
+        // Add current account's unread Important notifications
         self.cross_account_priority.extend(current_priority);
 
         eprintln!(
@@ -299,7 +301,7 @@ impl NotificationsScreen {
             // Combine current account's processed notifications with other accounts' priority
             let mut combined = self.processed_notifications.clone();
 
-            // Add other account priority notifications (they're already marked as Priority action)
+            // Add other account Important notifications (they're already marked as Important action)
             for p in other_account_priority {
                 // Avoid duplicates by ID
                 if !combined
@@ -319,7 +321,7 @@ impl NotificationsScreen {
             .map(|g| (g.title.clone(), g.is_expanded))
             .collect();
 
-        // Group by time. Priority group only shown in "Unread" mode (not "All").
+        // Group by time. Important group only shown in "Unread" mode (not "All").
         let show_priority_group = !self.filters.show_all;
         self.groups = group_processed_notifications(&all_processed, show_priority_group);
 
@@ -333,11 +335,11 @@ impl NotificationsScreen {
         // Log resulting priority group
         if let Some(priority_group) = self.groups.iter().find(|g| g.is_priority) {
             eprintln!(
-                "[DEBUG] rebuild_groups: Priority group has {} items",
+                "[DEBUG] rebuild_groups: Important group has {} items",
                 priority_group.notifications.len()
             );
         } else {
-            eprintln!("[DEBUG] rebuild_groups: No priority group");
+            eprintln!("[DEBUG] rebuild_groups: No Important group");
         }
     }
 
@@ -372,13 +374,15 @@ impl NotificationsScreen {
         for p in &batch.priority {
             let notif = &p.notification;
             let title = format!(
-                "Priority: {} - {}",
+                "Important: {} - {}",
                 notif.repo_full_name, notif.subject_type
             );
             let url = notif.url.as_ref().map(|u| api_url_to_web_url(u));
             let body = format!("{}\n{}", notif.title, notif.reason.label());
             eprintln!("[DEBUG] Sending priority notification: {:?}", title);
-            crate::platform::notify(&title, &body, url.as_deref());
+            if let Err(e) = crate::platform::notify(&title, &body, url.as_deref()) {
+                eprintln!("Failed to send notification: {}", e);
+            }
         }
 
         // If all notifications are priority, we're done
@@ -394,7 +398,9 @@ impl NotificationsScreen {
             let body = format!("{}\n{}", notif.title, notif.reason.label());
 
             eprintln!("[DEBUG] Sending single notification: {:?}", title);
-            crate::platform::notify(&title, &body, url.as_deref());
+            if let Err(e) = crate::platform::notify(&title, &body, url.as_deref()) {
+                eprintln!("Failed to send notification: {}", e);
+            }
         } else {
             // Multiple notifications - show a summary
             let title = format!("{} new GitHub notifications", batch.regular.len());
@@ -413,7 +419,9 @@ impl NotificationsScreen {
             };
 
             eprintln!("[DEBUG] Sending summary notification: {:?}", title);
-            crate::platform::notify(&title, &body, None);
+            if let Err(e) = crate::platform::notify(&title, &body, None) {
+                eprintln!("Failed to send notification: {}", e);
+            }
         }
 
         // Trim memory after sending desktop notifications to prevent accumulation
@@ -422,90 +430,46 @@ impl NotificationsScreen {
 
     pub fn update(&mut self, message: NotificationMessage) -> Task<NotificationMessage> {
         match message {
-            NotificationMessage::TogglePowerMode => Task::none(), // Handled by app.rs
             NotificationMessage::Refresh => {
                 self.is_loading = true;
                 self.error_message = None;
                 self.fetch_notifications()
             }
-            NotificationMessage::RefreshComplete(result) => {
-                self.is_loading = false;
-                match result {
-                    Ok(mut notifications) => {
-                        // Inject mock notifications if --mock-notifications N was passed
-                        let mock_count = crate::MOCK_NOTIFICATION_COUNT
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        if mock_count > 0 {
-                            let mock = crate::specs::generate_mock_notifications(
-                                mock_count,
-                                &self.user.login,
-                            );
-                            eprintln!(
-                                "[SPECS] Injecting {} mock notifications for scroll testing",
-                                mock_count
-                            );
-                            notifications.extend(mock);
-                        }
+            NotificationMessage::RefreshComplete(result) => self.handle_refresh_complete(result),
+            NotificationMessage::Filter(msg) => self.update_filter(msg),
+            NotificationMessage::Thread(msg) => self.update_thread(msg),
+            NotificationMessage::Bulk(msg) => self.update_bulk(msg),
+            NotificationMessage::View(msg) => self.update_view(msg),
+            NotificationMessage::Navigation(msg) => self.update_navigation(msg),
+        }
+    }
 
-                        eprintln!(
-                            "[DEBUG] RefreshComplete: got {} notifications",
-                            notifications.len()
-                        );
-
-                        // === PROCESS ONCE PIPELINE ===
-                        // 1. Process all notifications through rule engine (single pass)
-                        let engine = NotificationEngine::new(self.rules.clone());
-                        let processed_for_desktop = engine.process_all(&notifications);
-
-                        // 2. Check for new notifications to send desktop notifications
-                        //    Uses already-processed list (no re-evaluation)
-                        let is_hidden = window_state::is_hidden();
-                        eprintln!("[DEBUG] is_hidden = {}", is_hidden);
-
-                        if is_hidden {
-                            self.send_desktop_notifications(&processed_for_desktop);
-                        } else {
-                            eprintln!("[DEBUG] Window is visible, skipping desktop notifications");
-                        }
-
-                        // 3. Update seen timestamps with current notifications
-                        //    Cap size to prevent unbounded memory growth
-                        for n in &notifications {
-                            self.seen_notification_timestamps
-                                .insert(n.id.clone(), n.updated_at);
-                        }
-                        // Prune old entries if over limit (keep only current + some buffer)
-                        if self.seen_notification_timestamps.len() > 500 {
-                            // Keep only IDs that are in the current notification set
-                            let current_ids: std::collections::HashSet<_> =
-                                notifications.iter().map(|n| &n.id).collect();
-                            self.seen_notification_timestamps
-                                .retain(|id, _| current_ids.contains(id));
-                        }
-
-                        // 4. Store data and rebuild groups (will re-process with filters applied)
-                        //    If hidden, don't store the data - keep memory minimal
-                        if is_hidden {
-                            // Don't update all_notifications - keep it empty
-                            // Aggressively trim memory after the API call
-                            crate::platform::trim_memory();
-                        } else {
-                            self.all_notifications = notifications;
-                            // rebuild_groups() will process with current filters
-                            self.rebuild_groups();
-                            // Trim memory after render to release wgpu initialization buffers
-                            // This reduces baseline memory from ~100MB to ~15MB
-                            crate::platform::trim_memory();
-                        }
-                        self.error_message = None;
-                    }
-                    Err(e) => {
-                        self.error_message = Some(e.to_string());
-                    }
-                }
+    fn update_filter(&mut self, message: FilterMessage) -> Task<NotificationMessage> {
+        match message {
+            FilterMessage::ToggleShowAll => {
+                self.filters.show_all = !self.filters.show_all;
+                self.scroll_offset = 0.0;
+                self.is_loading = true;
+                self.fetch_notifications()
+            }
+            FilterMessage::SelectType(subject_type) => {
+                self.filters.selected_type = subject_type;
+                self.scroll_offset = 0.0;
+                self.rebuild_groups();
                 Task::none()
             }
-            NotificationMessage::Open(id) => {
+            FilterMessage::SelectRepo(repo) => {
+                self.filters.selected_repo = repo;
+                self.scroll_offset = 0.0;
+                self.rebuild_groups();
+                Task::none()
+            }
+        }
+    }
+
+    fn update_thread(&mut self, message: ThreadMessage) -> Task<NotificationMessage> {
+        match message {
+            ThreadMessage::Open(id) => {
                 if let Some(notif) = self.all_notifications.iter().find(|n| n.id == id) {
                     if let Some(ref url) = notif.url {
                         let web_url = api_url_to_web_url(url);
@@ -516,18 +480,28 @@ impl NotificationsScreen {
                 let notif_id = id.clone();
                 Task::perform(
                     async move { client.mark_as_read(&notif_id).await },
-                    move |result| NotificationMessage::MarkAsReadComplete(id.clone(), result),
+                    move |result| {
+                        NotificationMessage::Thread(ThreadMessage::MarkAsReadComplete(
+                            id.clone(),
+                            result,
+                        ))
+                    },
                 )
             }
-            NotificationMessage::MarkAsRead(id) => {
+            ThreadMessage::MarkAsRead(id) => {
                 let client = self.client.clone();
                 let notif_id = id.clone();
                 Task::perform(
                     async move { client.mark_as_read(&notif_id).await },
-                    move |result| NotificationMessage::MarkAsReadComplete(id.clone(), result),
+                    move |result| {
+                        NotificationMessage::Thread(ThreadMessage::MarkAsReadComplete(
+                            id.clone(),
+                            result,
+                        ))
+                    },
                 )
             }
-            NotificationMessage::MarkAsReadComplete(id, result) => {
+            ThreadMessage::MarkAsReadComplete(id, result) => {
                 if result.is_ok() {
                     if let Some(notif) = self.all_notifications.iter_mut().find(|n| n.id == id) {
                         notif.unread = false;
@@ -536,107 +510,138 @@ impl NotificationsScreen {
                 }
                 Task::none()
             }
-            NotificationMessage::MarkAllAsRead => {
-                // Optimistic update: immediately mark all as read in UI
+            ThreadMessage::MarkAllAsRead => {
                 for notif in &mut self.all_notifications {
                     notif.unread = false;
                 }
                 self.rebuild_groups();
 
-                // Fire API call in background
                 let client = self.client.clone();
+                Task::perform(async move { client.mark_all_as_read().await }, |result| {
+                    NotificationMessage::Thread(ThreadMessage::MarkAllAsReadComplete(result))
+                })
+            }
+            ThreadMessage::MarkAllAsReadComplete(_result) => {
+                self.is_loading = true;
+                self.fetch_notifications()
+            }
+            ThreadMessage::MarkAsDone(id) => {
+                let client = self.client.clone();
+                let notif_id = id.clone();
                 Task::perform(
-                    async move { client.mark_all_as_read().await },
-                    NotificationMessage::MarkAllAsReadComplete,
+                    async move { client.mark_thread_as_done(&notif_id).await },
+                    move |result| {
+                        NotificationMessage::Thread(ThreadMessage::MarkAsDoneComplete(
+                            id.clone(),
+                            result,
+                        ))
+                    },
                 )
             }
-            NotificationMessage::MarkAllAsReadComplete(_result) => {
-                // Resync from API
-                self.is_loading = true;
-                self.fetch_notifications()
+            ThreadMessage::MarkAsDoneComplete(id, result) => {
+                if result.is_ok() {
+                    self.all_notifications.retain(|n| n.id != id);
+                    self.rebuild_groups();
+                }
+                Task::none()
             }
-            NotificationMessage::ToggleShowAll => {
-                self.filters.show_all = !self.filters.show_all;
-                self.is_loading = true;
-                self.fetch_notifications()
+        }
+    }
+
+    fn update_bulk(&mut self, message: BulkMessage) -> Task<NotificationMessage> {
+        match message {
+            BulkMessage::ToggleMode => {
+                self.bulk_mode = !self.bulk_mode;
+                if !self.bulk_mode {
+                    self.selected_ids.clear();
+                    self.selected_ids.shrink_to_fit();
+                }
+                Task::none()
             }
-            NotificationMessage::Logout => Task::none(),
-            NotificationMessage::ToggleGroup(index) => {
+            BulkMessage::ToggleSelect(id) => {
+                if self.selected_ids.contains(&id) {
+                    self.selected_ids.remove(&id);
+                } else {
+                    self.selected_ids.insert(id);
+                }
+                Task::none()
+            }
+            BulkMessage::SelectAll => {
+                for notif in &self.filtered_notifications {
+                    self.selected_ids.insert(notif.id.clone());
+                }
+                Task::none()
+            }
+            BulkMessage::Clear => {
+                self.selected_ids.clear();
+                Task::none()
+            }
+            BulkMessage::MarkAsRead => {
+                for id in &self.selected_ids {
+                    if let Some(notif) = self.all_notifications.iter_mut().find(|n| &n.id == id) {
+                        notif.unread = false;
+                    }
+                }
+                self.rebuild_groups();
+
+                let client = self.client.clone();
+                let ids: Vec<String> = self.selected_ids.iter().cloned().collect();
+                self.selected_ids.clear();
+                self.bulk_mode = false;
+
+                Task::perform(
+                    async move {
+                        for id in ids {
+                            let _ = client.mark_as_read(&id).await;
+                        }
+                        Ok::<(), GitHubError>(())
+                    },
+                    |_| NotificationMessage::Bulk(BulkMessage::Complete),
+                )
+            }
+            BulkMessage::MarkAsDone => {
+                let ids_to_remove: Vec<String> = self.selected_ids.iter().cloned().collect();
+                self.all_notifications
+                    .retain(|n| !self.selected_ids.contains(&n.id));
+                self.rebuild_groups();
+
+                let client = self.client.clone();
+                self.selected_ids.clear();
+                self.bulk_mode = false;
+
+                Task::perform(
+                    async move {
+                        for id in ids_to_remove {
+                            let _ = client.mark_thread_as_done(&id).await;
+                        }
+                        Ok::<(), GitHubError>(())
+                    },
+                    |_| NotificationMessage::Bulk(BulkMessage::Complete),
+                )
+            }
+            BulkMessage::Complete => Task::none(),
+        }
+    }
+
+    fn update_view(&mut self, message: ViewMessage) -> Task<NotificationMessage> {
+        match message {
+            ViewMessage::ToggleGroup(index) => {
                 if let Some(group) = self.groups.get_mut(index) {
                     group.is_expanded = !group.is_expanded;
                 }
                 Task::none()
             }
-            NotificationMessage::SelectType(subject_type) => {
-                self.filters.selected_type = subject_type;
-                // Don't clear repo filter - allow independent selection
-                self.scroll_offset = 0.0; // Reset scroll to top when filter changes
-                self.rebuild_groups();
-                Task::none()
-            }
-            NotificationMessage::SelectRepo(repo) => {
-                self.filters.selected_repo = repo;
-                // Don't clear type filter - allow independent selection
-                self.scroll_offset = 0.0; // Reset scroll to top when filter changes
-                self.rebuild_groups();
-                Task::none()
-            }
-            NotificationMessage::MarkAsDone(id) => {
-                let client = self.client.clone();
-                let notif_id = id.clone();
-                Task::perform(
-                    async move { client.mark_thread_as_done(&notif_id).await },
-                    move |result| NotificationMessage::MarkAsDoneComplete(id.clone(), result),
-                )
-            }
-            NotificationMessage::MarkAsDoneComplete(id, result) => {
-                if result.is_ok() {
-                    self.all_notifications.retain(|n| n.id != id);
-                    self.rebuild_groups();
-                }
-                Task::none()
-            }
-            NotificationMessage::MuteThread(id) => {
-                let client = self.client.clone();
-                let notif_id = id.clone();
-                Task::perform(
-                    async move { client.delete_thread_subscription(&notif_id).await },
-                    move |result| NotificationMessage::MuteThreadComplete(id.clone(), result),
-                )
-            }
-            NotificationMessage::MuteThreadComplete(id, result) => {
-                if result.is_ok() {
-                    self.all_notifications.retain(|n| n.id != id);
-                    self.rebuild_groups();
-                }
-                Task::none()
-            }
-            NotificationMessage::OpenSettings => {
-                // Handled by parent (app.rs)
-                Task::none()
-            }
-            NotificationMessage::OpenRuleEngine => {
-                // Handled by parent (app.rs)
-                Task::none()
-            }
-            NotificationMessage::SwitchAccount(_) => {
-                // Handled by parent (app.rs)
-                Task::none()
-            }
-            NotificationMessage::OnScroll(viewport) => {
-                // Update scroll state for virtual scrolling
+            ViewMessage::OnScroll(viewport) => {
                 self.scroll_offset = viewport.absolute_offset().y;
                 self.viewport_height = viewport.bounds().height;
                 Task::none()
             }
-            NotificationMessage::SelectNotification(id) => {
-                // Find the notification
+            ViewMessage::SelectNotification(id) => {
                 if let Some(notif) = self.all_notifications.iter().find(|n| n.id == id) {
                     self.selected_notification_id = Some(id.clone());
                     self.selected_notification_details = None;
                     self.is_loading_details = true;
 
-                    // Fetch the details
                     let client = self.client.clone();
                     let subject_type = notif.subject_type;
                     let subject_url = notif.url.clone();
@@ -656,14 +661,18 @@ impl NotificationsScreen {
                                 )
                                 .await
                         },
-                        move |result| NotificationMessage::SelectComplete(id.clone(), result),
+                        move |result| {
+                            NotificationMessage::View(ViewMessage::SelectComplete(
+                                id.clone(),
+                                result,
+                            ))
+                        },
                     )
                 } else {
                     Task::none()
                 }
             }
-            NotificationMessage::SelectComplete(id, result) => {
-                // Only update if this is still the selected notification
+            ViewMessage::SelectComplete(id, result) => {
                 if self.selected_notification_id.as_ref() == Some(&id) {
                     self.is_loading_details = false;
                     match result {
@@ -678,8 +687,7 @@ impl NotificationsScreen {
                 }
                 Task::none()
             }
-            NotificationMessage::OpenInBrowser => {
-                // Open the selected notification's URL in browser
+            ViewMessage::OpenInBrowser => {
                 if let Some(ref id) = self.selected_notification_id {
                     if let Some(notif) = self.all_notifications.iter().find(|n| &n.id == id) {
                         if let Some(ref url) = notif.url {
@@ -690,87 +698,67 @@ impl NotificationsScreen {
                 }
                 Task::none()
             }
-            // Bulk action handlers
-            NotificationMessage::ToggleBulkMode => {
-                self.bulk_mode = !self.bulk_mode;
-                if !self.bulk_mode {
-                    // Clear and shrink to free memory
-                    self.selected_ids.clear();
-                    self.selected_ids.shrink_to_fit();
+        }
+    }
+
+    fn update_navigation(&mut self, message: NavigationMessage) -> Task<NotificationMessage> {
+        match message {
+            NavigationMessage::Logout => Task::none(),
+            NavigationMessage::OpenSettings => Task::none(),
+            NavigationMessage::OpenRuleEngine => Task::none(),
+            NavigationMessage::SwitchAccount(_) => Task::none(),
+            NavigationMessage::TogglePowerMode => Task::none(),
+        }
+    }
+
+    fn handle_refresh_complete(
+        &mut self,
+        result: Result<Vec<NotificationView>, GitHubError>,
+    ) -> Task<NotificationMessage> {
+        self.is_loading = false;
+        match result {
+            Ok(mut notifications) => {
+                let mock_count =
+                    crate::MOCK_NOTIFICATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+                if mock_count > 0 {
+                    let mock =
+                        crate::specs::generate_mock_notifications(mock_count, &self.user.login);
+                    notifications.extend(mock);
                 }
-                Task::none()
-            }
-            NotificationMessage::ToggleSelect(id) => {
-                if self.selected_ids.contains(&id) {
-                    self.selected_ids.remove(&id);
+
+                let engine = NotificationEngine::new(self.rules.clone());
+                let processed_for_desktop = engine.process_all(&notifications);
+                let is_hidden = window_state::is_hidden();
+
+                if is_hidden {
+                    self.send_desktop_notifications(&processed_for_desktop);
+                }
+
+                for n in &notifications {
+                    self.seen_notification_timestamps
+                        .insert(n.id.clone(), n.updated_at);
+                }
+                if self.seen_notification_timestamps.len() > 500 {
+                    let current_ids: std::collections::HashSet<_> =
+                        notifications.iter().map(|n| &n.id).collect();
+                    self.seen_notification_timestamps
+                        .retain(|id, _| current_ids.contains(id));
+                }
+
+                if is_hidden {
+                    crate::platform::trim_memory();
                 } else {
-                    self.selected_ids.insert(id);
+                    self.all_notifications = notifications;
+                    self.rebuild_groups();
+                    crate::platform::trim_memory();
                 }
-                Task::none()
+                self.error_message = None;
             }
-            NotificationMessage::SelectAll => {
-                // Select all filtered notifications
-                for notif in &self.filtered_notifications {
-                    self.selected_ids.insert(notif.id.clone());
-                }
-                Task::none()
-            }
-            NotificationMessage::ClearSelection => {
-                self.selected_ids.clear();
-                Task::none()
-            }
-            NotificationMessage::BulkMarkAsRead => {
-                // Optimistic update: immediately mark selected as read in UI
-                for id in &self.selected_ids {
-                    if let Some(notif) = self.all_notifications.iter_mut().find(|n| &n.id == id) {
-                        notif.unread = false;
-                    }
-                }
-                self.rebuild_groups();
-
-                // Fire API calls in background for each selected
-                let client = self.client.clone();
-                let ids: Vec<String> = self.selected_ids.iter().cloned().collect();
-                self.selected_ids.clear();
-                self.bulk_mode = false;
-
-                Task::perform(
-                    async move {
-                        for id in ids {
-                            let _ = client.mark_as_read(&id).await;
-                        }
-                        Ok::<(), GitHubError>(())
-                    },
-                    |_| NotificationMessage::BulkActionComplete,
-                )
-            }
-            NotificationMessage::BulkMarkAsDone => {
-                // Optimistic update: immediately remove selected from UI
-                let ids_to_remove: Vec<String> = self.selected_ids.iter().cloned().collect();
-                self.all_notifications
-                    .retain(|n| !self.selected_ids.contains(&n.id));
-                self.rebuild_groups();
-
-                // Fire API calls in background
-                let client = self.client.clone();
-                self.selected_ids.clear();
-                self.bulk_mode = false;
-
-                Task::perform(
-                    async move {
-                        for id in ids_to_remove {
-                            let _ = client.mark_thread_as_done(&id).await;
-                        }
-                        Ok::<(), GitHubError>(())
-                    },
-                    |_| NotificationMessage::BulkActionComplete,
-                )
-            }
-            NotificationMessage::BulkActionComplete => {
-                // No-op: optimistic update already handled UI, no need to refresh
-                Task::none()
+            Err(e) => {
+                self.error_message = Some(e.to_string());
             }
         }
+        Task::none()
     }
 
     pub fn view<'a>(

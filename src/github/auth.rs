@@ -20,42 +20,51 @@ pub enum AuthError {
     GitHub(#[from] GitHubError),
 }
 
-/// Authentication manager handling token storage and validation.
-pub struct AuthManager;
+/// Creates a new keyring entry.
+fn get_entry() -> Result<Entry, AuthError> {
+    Entry::new(SERVICE_NAME, ACCOUNT_NAME).map_err(|e| AuthError::Keyring(e.to_string()))
+}
 
-impl AuthManager {
-    /// Creates a new keyring entry.
-    fn get_entry() -> Result<Entry, AuthError> {
-        Entry::new(SERVICE_NAME, ACCOUNT_NAME).map_err(|e| AuthError::Keyring(e.to_string()))
+/// Saves the token to secure storage.
+pub fn save_token(token: &str) -> Result<(), AuthError> {
+    let entry = get_entry()?;
+    entry
+        .set_password(token)
+        .map_err(|e| AuthError::Keyring(e.to_string()))?;
+    Ok(())
+}
+
+/// Deletes the stored token.
+pub fn delete_token() -> Result<(), AuthError> {
+    let entry = get_entry()?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()), // Already deleted
+        Err(e) => Err(AuthError::Keyring(e.to_string())),
     }
+}
 
-    /// Saves the token to secure storage.
-    pub fn save_token(token: &str) -> Result<(), AuthError> {
-        let entry = Self::get_entry()?;
-        entry
-            .set_password(token)
-            .map_err(|e| AuthError::Keyring(e.to_string()))?;
-        Ok(())
+/// Full authentication flow: validate token, save to keyring, return user info.
+pub async fn authenticate(token: &str) -> Result<(GitHubClient, UserInfo), AuthError> {
+    // Validate and create client
+    let (client, user) = GitHubClient::validate_token(token).await?;
+
+    // Save to secure storage
+    save_token(token)?;
+
+    Ok((client, user))
+}
+
+/// Validates the format of a GitHub Personal Access Token.
+/// Checks for 'ghp_' or 'github_pat_' prefix and non-empty content.
+pub fn validate_token_format(token: &str) -> Result<(), AuthError> {
+    if token.is_empty() {
+        return Err(AuthError::Keyring("Token cannot be empty".to_string()));
     }
-
-    /// Deletes the stored token.
-    pub fn delete_token() -> Result<(), AuthError> {
-        let entry = Self::get_entry()?;
-        match entry.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()), // Already deleted
-            Err(e) => Err(AuthError::Keyring(e.to_string())),
-        }
+    if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
+        return Err(AuthError::Keyring(
+            "Token must start with 'ghp_' or 'github_pat_'".to_string(),
+        ));
     }
-
-    /// Full authentication flow: validate token, save to keyring, return user info.
-    pub async fn authenticate(token: &str) -> Result<(GitHubClient, UserInfo), AuthError> {
-        // Validate and create client
-        let (client, user) = GitHubClient::validate_token(token).await?;
-
-        // Save to secure storage
-        Self::save_token(token)?;
-
-        Ok((client, user))
-    }
+    Ok(())
 }

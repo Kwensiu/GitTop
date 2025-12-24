@@ -1,6 +1,6 @@
 //! Main content view - notification list with virtual scrolling.
 
-use iced::widget::{button, column, container, row, scrollable, Space};
+use iced::widget::{Space, button, column, container, row, scrollable};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
@@ -10,7 +10,7 @@ use crate::ui::{icons, theme};
 use super::group::view_group_header;
 use super::states::{view_empty, view_error, view_loading};
 
-use crate::ui::screens::notifications::messages::NotificationMessage;
+use crate::ui::screens::notifications::messages::{BulkMessage, NotificationMessage, ViewMessage};
 use crate::ui::screens::notifications::screen::NotificationsScreen;
 
 impl NotificationsScreen {
@@ -60,7 +60,12 @@ impl NotificationsScreen {
         // Check if there are any notifications to display
         let has_notifications = self.groups.iter().any(|g| !g.notifications.is_empty());
         if !has_notifications {
-            return view_empty(self.filters.show_all, icon_theme);
+            let empty_state = if self.filters.show_all {
+                super::states::EmptyState::NoNotifications
+            } else {
+                super::states::EmptyState::AllCaughtUp
+            };
+            return view_empty(empty_state, icon_theme);
         }
 
         let in_bulk_mode = self.bulk_mode && power_mode;
@@ -181,7 +186,7 @@ impl NotificationsScreen {
                                 }
                             })
                             .padding(0)
-                            .on_press(NotificationMessage::ToggleSelect(id))
+                            .on_press(NotificationMessage::Bulk(BulkMessage::ToggleSelect(id)))
                             .width(Fill)
                             .into()
                         } else {
@@ -211,7 +216,7 @@ impl NotificationsScreen {
 
         container(
             scrollable(content)
-                .on_scroll(NotificationMessage::OnScroll)
+                .on_scroll(|v| NotificationMessage::View(ViewMessage::OnScroll(v)))
                 .height(Fill)
                 .width(Fill)
                 .style(theme::scrollbar),
@@ -303,7 +308,7 @@ impl NotificationsScreen {
                             }
                         })
                         .padding(0)
-                        .on_press(NotificationMessage::ToggleSelect(id))
+                        .on_press(NotificationMessage::Bulk(BulkMessage::ToggleSelect(id)))
                         .width(Fill)
                         .into()
                     } else {
@@ -319,7 +324,7 @@ impl NotificationsScreen {
 
         container(
             scrollable(content)
-                .on_scroll(NotificationMessage::OnScroll)
+                .on_scroll(|v| NotificationMessage::View(ViewMessage::OnScroll(v)))
                 .height(Fill)
                 .width(Fill)
                 .style(theme::scrollbar),

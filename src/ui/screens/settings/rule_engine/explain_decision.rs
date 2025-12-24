@@ -3,111 +3,19 @@
 //! This component allows users to test their rules by simulating a notification
 //! and seeing which rules would match and in what priority order.
 
-use iced::widget::{column, container, row, text, Space};
+use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Element, Fill};
 
 use crate::settings::IconTheme;
 use crate::ui::icons;
-use crate::ui::screens::settings::rule_engine::rules::{
-    NotificationRuleSet, OutsideScheduleBehavior, RuleAction,
-};
+use crate::ui::screens::settings::rule_engine::rules::{NotificationRuleSet, RuleAction};
 use crate::ui::theme;
 
 use super::messages::RuleEngineMessage;
 
-/// A matched rule for explanation display.
-#[derive(Debug, Clone)]
-pub struct MatchedRule {
-    pub id: String,
-    pub rule_type: String,
-    pub name: String,
-    pub action: RuleAction,
-    pub priority: i32,
-    pub enabled: bool,
-}
+use chrono::Local;
 
-/// Simulate matching rules for a given notification type.
-pub fn simulate_matching_rules(
-    rules: &NotificationRuleSet,
-    notification_type: &str,
-    account: Option<&str>,
-) -> Vec<MatchedRule> {
-    if !rules.enabled {
-        return vec![];
-    }
-
-    let mut matches = vec![];
-
-    // Check type rules
-    for rule in &rules.type_rules {
-        if rule.notification_type == notification_type {
-            // Check account scope
-            // When testing without a specific account (None), show all rules
-            // but note that account-specific rules would only apply to that account
-            let account_match = match (&rule.account, account) {
-                (None, _) => true, // Global rule matches all
-                (Some(rule_acc), Some(notif_acc)) => rule_acc == notif_acc, // Account-specific match
-                (Some(_), None) => true, // Show account rules when no test account (informational)
-            };
-
-            if account_match {
-                matches.push(MatchedRule {
-                    id: rule.id.clone(),
-                    rule_type: "Type".to_string(),
-                    name: format!(
-                        "{} ({})",
-                        rule.notification_type,
-                        rule.account.as_deref().unwrap_or("Global")
-                    ),
-                    action: rule.action,
-                    priority: rule.priority,
-                    enabled: rule.enabled,
-                });
-            }
-        }
-    }
-
-    // Check account rules
-    if let Some(acc) = account {
-        for rule in &rules.account_rules {
-            if rule.account == acc {
-                let action = if rule.is_active_now() {
-                    RuleAction::Show
-                } else {
-                    match rule.outside_behavior {
-                        OutsideScheduleBehavior::Suppress => RuleAction::Hide,
-                        OutsideScheduleBehavior::Defer => RuleAction::Silent,
-                    }
-                };
-                matches.push(MatchedRule {
-                    id: rule.id.clone(),
-                    rule_type: "Account".to_string(),
-                    name: rule.account.clone(),
-                    action,
-                    priority: 0,
-                    enabled: rule.enabled,
-                });
-            }
-        }
-    }
-
-    // Sort by priority (highest first) then by enabled status
-    matches.sort_by(|a, b| {
-        if a.enabled != b.enabled {
-            return b.enabled.cmp(&a.enabled);
-        }
-        // Prioritize Priority action rules to top
-        if a.action == RuleAction::Priority && b.action != RuleAction::Priority {
-            return std::cmp::Ordering::Less;
-        }
-        if b.action == RuleAction::Priority && a.action != RuleAction::Priority {
-            return std::cmp::Ordering::Greater;
-        }
-        b.priority.cmp(&a.priority)
-    });
-
-    matches
-}
+// MatchedRule and simulate_matching_rules removed in favor of rules.trace()
 
 /// View the explanation panel.
 pub fn view_explain_panel(
@@ -129,8 +37,8 @@ pub fn view_explain_panel(
         .size(11)
         .color(p.text_secondary);
 
-    // Simulate matching
-    let matches = simulate_matching_rules(rules, test_type, test_account);
+    // Simulate matching using the actual engine logic
+    let matches = rules.trace(test_type, None, test_account, &Local::now(), true);
 
     let result_content = if matches.is_empty() {
         column![
@@ -146,26 +54,15 @@ pub fn view_explain_panel(
     } else {
         let mut col = column![Space::new().height(8),].spacing(6);
 
-        // Get the winning rule
-        // 1. If any rule has Action::Priority, it overrides everything else
-        let priority_override_rule = matches
-            .iter()
-            .find(|m| m.enabled && m.action == RuleAction::Priority)
-            .cloned();
-
-        let winner = if let Some(rule) = priority_override_rule {
-            Some(rule)
-        } else {
-            // 2. Otherwise standard logic: Highest priority enabled rule
-            matches.iter().find(|m| m.enabled).cloned()
-        };
+        // The first match is the winner because trace() sorts them.
+        let winner = matches.first();
 
         for matched in matches.iter() {
             let is_winner = winner.as_ref().map(|w| w.id == matched.id).unwrap_or(false);
 
             let action_color = match matched.action {
                 RuleAction::Hide => p.accent_warning,
-                RuleAction::Priority => p.accent,
+                RuleAction::Important => p.accent,
                 _ => p.text_primary,
             };
 
@@ -177,7 +74,7 @@ pub fn view_explain_panel(
 
             let badge_color = match matched.action {
                 RuleAction::Hide => p.accent_warning,
-                RuleAction::Priority => p.accent,
+                RuleAction::Important => p.accent,
                 _ => p.accent,
             };
 
@@ -194,7 +91,7 @@ pub fn view_explain_panel(
             };
 
             // Clone strings to avoid lifetime issues
-            let rule_type = matched.rule_type.clone();
+            let rule_type = matched.rule_source.clone();
             let name = matched.name.clone();
             let priority_str = format!("P:{}", matched.priority);
             let action_label = matched.action.display_label();
@@ -236,7 +133,7 @@ pub fn view_explain_panel(
 
             let final_action_color = match w.action {
                 RuleAction::Hide => p.accent_warning,
-                RuleAction::Priority => p.accent,
+                RuleAction::Important => p.accent,
                 _ => p.text_primary,
             };
 

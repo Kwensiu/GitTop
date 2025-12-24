@@ -1,9 +1,9 @@
 //! Settings screen - main screen with tab navigation.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Length, Task};
 
-use crate::github::{AccountKeyring, GitHubClient};
+use crate::github::{GitHubClient, keyring};
 use crate::settings::{AppSettings, IconTheme};
 use crate::ui::{icons, theme};
 
@@ -32,15 +32,13 @@ impl SettingsScreen {
             SettingsMessage::Back => Task::none(),
             SettingsMessage::SelectTab(tab) => {
                 self.selected_tab = tab;
-                self.accounts_state.error_message = None;
-                self.accounts_state.success_message = None;
+                self.accounts_state.status = accounts::SubmissionStatus::Idle;
                 Task::none()
             }
             SettingsMessage::ChangeTheme(new_theme) => {
                 self.settings.theme = new_theme;
                 theme::set_theme(new_theme);
-                let _ = self.settings.save();
-                crate::platform::trim_memory();
+                self.persist_settings();
                 Task::none()
             }
             SettingsMessage::ToggleIconTheme(use_svg) => {
@@ -49,8 +47,7 @@ impl SettingsScreen {
                 } else {
                     IconTheme::Emoji
                 };
-                let _ = self.settings.save();
-                crate::platform::trim_memory();
+                self.persist_settings();
                 Task::none()
             }
             SettingsMessage::ToggleMinimizeToTray(enabled) => {
@@ -61,30 +58,27 @@ impl SettingsScreen {
             SettingsMessage::RemoveAccount(username) => {
                 self.settings.remove_account(&username);
                 let _ = self.settings.save();
-                let _ = AccountKeyring::delete_token(&username);
+                let _ = keyring::delete_token(&username);
                 Task::none()
             }
             SettingsMessage::SetNotificationFontScale(scale) => {
                 let clamped = scale.clamp(0.8, 1.5);
                 self.settings.notification_font_scale = clamped;
                 theme::set_notification_font_scale(clamped);
-                let _ = self.settings.save();
-                crate::platform::trim_memory();
+                self.persist_settings();
                 Task::none()
             }
             SettingsMessage::SetSidebarFontScale(scale) => {
                 let clamped = scale.clamp(0.8, 1.5);
                 self.settings.sidebar_font_scale = clamped;
                 theme::set_sidebar_font_scale(clamped);
-                let _ = self.settings.save();
-                crate::platform::trim_memory();
+                self.persist_settings();
                 Task::none()
             }
             SettingsMessage::SetSidebarWidth(width) => {
                 let clamped = width.clamp(180.0, 400.0);
                 self.settings.sidebar_width = clamped;
-                let _ = self.settings.save();
-                crate::platform::trim_memory();
+                self.persist_settings();
                 Task::none()
             }
             SettingsMessage::TogglePowerMode(enabled) => {
@@ -95,56 +89,49 @@ impl SettingsScreen {
             SettingsMessage::OpenRuleEngine => Task::none(),
             SettingsMessage::TokenInputChanged(token) => {
                 self.accounts_state.token_input = token;
-                self.accounts_state.error_message = None;
+                self.accounts_state.status = accounts::SubmissionStatus::Idle;
                 Task::none()
             }
             SettingsMessage::SubmitToken => {
                 let token = self.accounts_state.token_input.clone();
-                if token.is_empty() {
-                    self.accounts_state.error_message = Some("Token cannot be empty".to_string());
+                if let Err(e) = crate::github::auth::validate_token_format(&token) {
+                    self.accounts_state.status = accounts::SubmissionStatus::Error(e.to_string());
                     return Task::none();
                 }
 
-                if !token.starts_with("ghp_") && !token.starts_with("github_pat_") {
-                    self.accounts_state.error_message =
-                        Some("Token must start with 'ghp_' or 'github_pat_'".to_string());
-                    return Task::none();
-                }
-
-                self.accounts_state.is_validating = true;
-                self.accounts_state.error_message = None;
+                self.accounts_state.status = accounts::SubmissionStatus::Validating;
 
                 Task::perform(
                     async move {
-                        match GitHubClient::new(&token) {
-                            Ok(client) => match client.get_authenticated_user().await {
-                                Ok(user) => {
-                                    if let Err(e) = AccountKeyring::save_token(&user.login, &token)
-                                    {
-                                        return Err(format!("Failed to save token: {}", e));
-                                    }
-                                    Ok(user.login)
-                                }
-                                Err(e) => Err(format!("Validation failed: {}", e)),
-                            },
-                            Err(e) => Err(format!("Invalid token: {}", e)),
-                        }
+                        let client = GitHubClient::new(&token)
+                            .map_err(|e| format!("Invalid token: {}", e))?;
+
+                        let user = client
+                            .get_authenticated_user()
+                            .await
+                            .map_err(|e| format!("Validation failed: {}", e))?;
+
+                        keyring::save_token(&user.login, &token)
+                            .map_err(|e| format!("Failed to save token: {}", e))?;
+
+                        Ok(user.login)
                     },
                     SettingsMessage::TokenValidated,
                 )
             }
             SettingsMessage::TokenValidated(result) => {
-                self.accounts_state.is_validating = false;
                 match result {
                     Ok(username) => {
                         self.settings.set_active_account(&username);
                         let _ = self.settings.save();
                         self.accounts_state.token_input.clear();
-                        self.accounts_state.success_message =
-                            Some(format!("Account '{}' added successfully!", username));
+                        self.accounts_state.status = accounts::SubmissionStatus::Success(format!(
+                            "Account '{}' added successfully!",
+                            username
+                        ));
                     }
                     Err(error) => {
-                        self.accounts_state.error_message = Some(error);
+                        self.accounts_state.status = accounts::SubmissionStatus::Error(error);
                     }
                 }
                 Task::none()
@@ -297,5 +284,10 @@ impl SettingsScreen {
                 ..Default::default()
             })
             .into()
+    }
+
+    fn persist_settings(&mut self) {
+        let _ = self.settings.save();
+        crate::platform::trim_memory();
     }
 }

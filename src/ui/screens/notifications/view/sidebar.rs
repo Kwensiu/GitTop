@@ -1,28 +1,29 @@
 //! Sidebar component - navigation and filtering.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Fill, Length, Padding};
 
 use crate::github::{SubjectType, UserInfo};
 use crate::settings::IconTheme;
-use crate::ui::screens::notifications::messages::NotificationMessage;
+use crate::ui::screens::notifications::messages::{
+    FilterMessage, NavigationMessage, NotificationMessage,
+};
 use crate::ui::{icons, theme};
 
 use super::sidebar_state::SidebarState;
 
 /// Render the sidebar.
 pub fn view_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMessage> {
-    // Scrollable content (branding, types, repos)
-    let mut scrollable_content = column![];
-
-    // Only show branding in sidebar if NOT in power mode (it's in top bar otherwise)
-    if !state.power_mode {
-        scrollable_content = scrollable_content
-            .push(view_branding(state.icon_theme))
-            .push(Space::new().height(16));
+    if state.power_mode {
+        view_power_sidebar(state)
+    } else {
+        view_standard_sidebar(state)
     }
+}
 
-    let scrollable_content = scrollable_content
+fn view_standard_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMessage> {
+    // Scrollable content (branding, types, repos)
+    let scrollable_content = column![view_branding(state.icon_theme), Space::new().height(16)]
         .push(view_types_section(
             state.type_counts,
             state.selected_type,
@@ -39,19 +40,7 @@ pub fn view_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMess
         .spacing(0)
         .padding([16, 12]);
 
-    // Main layout: scrollable area + user section pinned at bottom
-    let content: Element<'a, NotificationMessage> = if state.power_mode {
-        // In power mode, user info is in top bar, so just show scrollable content
-        // We still wrap in clear container for consistent background if needed
-        container(
-            scrollable(scrollable_content)
-                .height(Fill)
-                .style(theme::scrollbar),
-        )
-        .width(Fill)
-        .height(Fill)
-        .into()
-    } else {
+    container(
         column![
             scrollable(scrollable_content)
                 .height(Fill)
@@ -69,15 +58,44 @@ pub fn view_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMess
                 left: 12.0,
             }),
         ]
-        .height(Fill)
-        .into()
-    };
+        .height(Fill),
+    )
+    .width(Length::Fixed(state.width.clamp(180.0, 400.0)))
+    .height(Fill)
+    .style(theme::sidebar)
+    .into()
+}
 
-    container(content)
-        .width(Length::Fixed(state.width.clamp(180.0, 400.0)))
-        .height(Fill)
-        .style(theme::sidebar)
-        .into()
+fn view_power_sidebar<'a>(state: SidebarState<'a>) -> Element<'a, NotificationMessage> {
+    // In power mode, branding and user info are in top bar
+    // Just show scrollable navigation content
+    let scrollable_content = column![
+        view_types_section(
+            state.type_counts,
+            state.selected_type,
+            state.total_count,
+            state.icon_theme,
+        ),
+        Space::new().height(16),
+        view_repos_section(
+            state.repo_counts,
+            state.selected_repo,
+            state.total_repo_count,
+            state.icon_theme,
+        )
+    ]
+    .spacing(0)
+    .padding([16, 12]);
+
+    container(
+        scrollable(scrollable_content)
+            .height(Fill)
+            .style(theme::scrollbar),
+    )
+    .width(Length::Fixed(state.width.clamp(180.0, 400.0)))
+    .height(Fill)
+    .style(theme::sidebar)
+    .into()
 }
 
 fn view_branding<'a>(icon_theme: IconTheme) -> Element<'a, NotificationMessage> {
@@ -99,40 +117,40 @@ fn view_types_section(
 ) -> Element<'static, NotificationMessage> {
     let p = theme::palette();
 
-    let mut col = column![
-        text("Types")
-            .size(theme::sidebar_scaled(11.0))
-            .color(p.text_secondary),
-        Space::new().height(8),
-        // "All" option
-        sidebar_item(
-            icons::icon_inbox(14.0, p.text_primary, icon_theme),
-            "All".to_owned(),
-            total_count,
-            selected_type.is_none(),
-            NotificationMessage::SelectType(None),
-        ),
-    ]
-    .spacing(2);
+    let all_item = sidebar_item(
+        icons::icon_inbox(14.0, p.text_primary, icon_theme),
+        "All".to_owned(),
+        total_count,
+        selected_type.is_none(),
+        NotificationMessage::Filter(FilterMessage::SelectType(None)),
+    );
 
-    // Add type items
-    for (subject_type, count) in type_counts {
+    let types_items = type_counts.iter().map(|(subject_type, count)| {
         let is_selected = selected_type == Some(*subject_type);
         let icon_color = if is_selected {
             p.accent
         } else {
             p.text_primary
         };
-        col = col.push(sidebar_item(
+        sidebar_item(
             subject_type_icon(*subject_type, icon_color, icon_theme),
             subject_type_label(*subject_type).to_owned(),
             *count,
             is_selected,
-            NotificationMessage::SelectType(Some(*subject_type)),
-        ));
-    }
+            NotificationMessage::Filter(FilterMessage::SelectType(Some(*subject_type))),
+        )
+    });
 
-    col.into()
+    column![
+        text("Types")
+            .size(theme::sidebar_scaled(11.0))
+            .color(p.text_secondary),
+        Space::new().height(8),
+        all_item
+    ]
+    .spacing(2)
+    .extend(types_items)
+    .into()
 }
 
 fn view_repos_section(
@@ -143,40 +161,42 @@ fn view_repos_section(
 ) -> Element<'static, NotificationMessage> {
     let p = theme::palette();
 
-    let mut col = column![
-        text("Repositories")
-            .size(theme::sidebar_scaled(11.0))
-            .color(p.text_secondary),
-        Space::new().height(8),
-        // "All" option
-        sidebar_item(
-            icons::icon_folder(14.0, p.text_primary, icon_theme),
-            "All".to_owned(),
-            total_repo_count,
-            selected_repo.is_none(),
-            NotificationMessage::SelectRepo(None),
-        ),
-    ]
-    .spacing(2);
+    let all_item = sidebar_item(
+        icons::icon_folder(14.0, p.text_primary, icon_theme),
+        "All".to_owned(),
+        total_repo_count,
+        selected_repo.is_none(),
+        NotificationMessage::Filter(FilterMessage::SelectRepo(None)),
+    );
 
-    // Limit to top 10 repos
-    for (repo, count) in repo_counts.iter().take(10) {
+    let repo_items = repo_counts.iter().take(10).map(|(repo, count)| {
         let is_selected = selected_repo == Some(repo.as_str());
         let icon_color = if is_selected {
             p.accent
         } else {
             p.text_primary
         };
-        // Extract just the repo name (after the /)
-        let short_name = repo.split('/').next_back().unwrap_or(repo).to_owned();
-        col = col.push(sidebar_item(
+
+        let short_name = format_repo_short_name(repo);
+
+        sidebar_item(
             icons::icon_folder(14.0, icon_color, icon_theme),
             short_name,
             *count,
             is_selected,
-            NotificationMessage::SelectRepo(Some(repo.clone())),
-        ));
-    }
+            NotificationMessage::Filter(FilterMessage::SelectRepo(Some(repo.clone()))),
+        )
+    });
+
+    let mut col = column![
+        text("Repositories")
+            .size(theme::sidebar_scaled(11.0))
+            .color(p.text_secondary),
+        Space::new().height(8),
+        all_item
+    ]
+    .spacing(2)
+    .extend(repo_items);
 
     if repo_counts.is_empty() && total_repo_count == 0 {
         col = col.push(text("No repositories").size(11).color(p.text_muted));
@@ -195,11 +215,9 @@ fn view_user_section<'a>(
     // Account selector or just label
     let account_control: Element<'_, _, _, iced::Renderer> = if accounts.len() > 1 {
         // Dropdown for switching
-        iced::widget::pick_list(
-            accounts.to_vec(),
-            Some(user.login.clone()),
-            NotificationMessage::SwitchAccount,
-        )
+        iced::widget::pick_list(accounts.to_vec(), Some(user.login.clone()), |s| {
+            NotificationMessage::Navigation(NavigationMessage::SwitchAccount(s))
+        })
         .text_size(13)
         .padding([4, 8])
         .style(theme::pick_list_style)
@@ -225,11 +243,13 @@ fn view_user_section<'a>(
             button(icons::icon_settings(14.0, p.text_muted, icon_theme))
                 .style(theme::ghost_button)
                 .padding([6, 8])
-                .on_press(NotificationMessage::OpenSettings),
+                .on_press(NotificationMessage::Navigation(
+                    NavigationMessage::OpenSettings
+                )),
             button(icons::icon_power(14.0, p.text_muted, icon_theme))
                 .style(theme::ghost_button)
                 .padding([6, 8])
-                .on_press(NotificationMessage::Logout),
+                .on_press(NotificationMessage::Navigation(NavigationMessage::Logout)),
         ]
         .align_y(Alignment::Center),
     ]
@@ -300,4 +320,13 @@ fn subject_type_label(t: SubjectType) -> &'static str {
         SubjectType::RepositoryVulnerabilityAlert => "Security",
         SubjectType::Unknown => "Other",
     }
+}
+
+/// Helper to format repo name short (e.g. "params/GitTop" -> "GitTop").
+fn format_repo_short_name(full_name: &str) -> String {
+    full_name
+        .split('/')
+        .next_back()
+        .unwrap_or(full_name)
+        .to_owned()
 }

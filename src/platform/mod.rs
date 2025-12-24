@@ -81,16 +81,20 @@ pub fn trim_memory() {
 /// - macOS: NSUserNotificationCenter / UNUserNotificationCenter  
 /// - Linux: DBus via notify-rust
 /// - FreeBSD: DBus via notify-rust
-pub fn notify(title: &str, body: &str, url: Option<&str>) {
+pub fn notify(
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
-    windows::notify(title, body, url);
+    return windows::notify(title, body, url).map_err(|e| e.into());
 
     #[cfg(target_os = "macos")]
-    macos::notify(title, body, url);
+    return macos::notify(title, body, url).map_err(|e| e.into());
 
     #[cfg(target_os = "linux")]
-    linux::notify(title, body, url);
+    return linux::notify(title, body, url).map_err(|e| e.into());
 
     #[cfg(target_os = "freebsd")]
-    freebsd::notify(title, body, url);
+    return freebsd::notify(title, body, url).map_err(|e| e.into());
 }

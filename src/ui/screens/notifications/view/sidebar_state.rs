@@ -5,6 +5,9 @@ use crate::settings::IconTheme;
 
 pub struct SidebarState<'a> {
     pub user: &'a UserInfo,
+    /// List of accounts.
+    /// Kept as owned Vec because it is constructed ephemerally from an iterator in app.rs,
+    /// and storing it as a slice would require a persistent storage in the parent scope which doesn't exist.
     pub accounts: Vec<String>,
     pub type_counts: &'a [(SubjectType, usize)],
     pub repo_counts: &'a [(String, usize)],

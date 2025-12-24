@@ -1,9 +1,9 @@
 //! Login screen - Personal Access Token entry.
 
-use iced::widget::{button, column, container, text, text_input, Space};
+use iced::widget::{Space, button, column, container, text, text_input};
 use iced::{Alignment, Element, Fill, Length, Task};
 
-use crate::github::{AuthManager, GitHubClient, UserInfo};
+use crate::github::{GitHubClient, UserInfo, auth};
 use crate::ui::theme;
 
 /// Login screen state.
@@ -43,12 +43,17 @@ impl LoginScreen {
                     return Task::none();
                 }
 
+                if let Err(e) = auth::validate_token_format(&self.token_input) {
+                    self.error_message = Some(e.to_string());
+                    return Task::none();
+                }
+
                 self.is_loading = true;
                 self.error_message = None;
 
                 let token = self.token_input.clone();
                 Task::perform(
-                    async move { AuthManager::authenticate(&token).await },
+                    async move { auth::authenticate(&token).await },
                     |result| match result {
                         Ok((client, user)) => LoginMessage::LoginSuccess(client, user),
                         Err(e) => LoginMessage::LoginFailed(e.to_string()),

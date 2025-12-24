@@ -7,9 +7,7 @@ pub mod session;
 pub mod subject_details;
 pub mod types;
 
-pub use auth::AuthManager;
 pub use client::{GitHubClient, GitHubError};
-pub use keyring::AccountKeyring;
 pub use session::SessionManager;
 pub use subject_details::NotificationSubjectDetail;
 pub use types::*;

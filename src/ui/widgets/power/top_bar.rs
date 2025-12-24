@@ -1,11 +1,13 @@
 //! Top Bar widget - Global context and command center.
 
-use iced::widget::{button, container, row, text, Space};
+use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Fill};
 
 use crate::github::UserInfo;
 use crate::settings::IconTheme;
-use crate::ui::screens::notifications::NotificationMessage;
+use crate::ui::screens::notifications::messages::{
+    BulkMessage, FilterMessage, NavigationMessage, NotificationMessage, ThreadMessage,
+};
 use crate::ui::{icons, theme};
 
 /// Account info for the account switcher.
@@ -30,11 +32,9 @@ pub fn view_top_bar<'a>(
         // Dropdown for switching
         let account_names: Vec<String> = accounts.iter().map(|a| a.username.clone()).collect();
 
-        iced::widget::pick_list(
-            account_names,
-            Some(user.login.clone()),
-            NotificationMessage::SwitchAccount,
-        )
+        iced::widget::pick_list(account_names, Some(user.login.clone()), |s| {
+            NotificationMessage::Navigation(NavigationMessage::SwitchAccount(s))
+        })
         .text_size(13)
         .padding([4, 8])
         .style(theme::pick_list_style)
@@ -47,7 +47,9 @@ pub fn view_top_bar<'a>(
 
     // Settings Button
     let settings_btn = button(icons::icon_settings(16.0, p.text_secondary, icon_theme))
-        .on_press(NotificationMessage::OpenSettings)
+        .on_press(NotificationMessage::Navigation(
+            NavigationMessage::OpenSettings,
+        ))
         .style(theme::ghost_button)
         .padding(6);
 
@@ -100,12 +102,12 @@ pub fn view_top_bar<'a>(
     let unread_btn = button(text("Unread").size(12))
         .style(theme::segment_button(is_unread_filter))
         .padding([4, 10])
-        .on_press(NotificationMessage::ToggleShowAll);
+        .on_press(NotificationMessage::Filter(FilterMessage::ToggleShowAll));
 
     let all_btn = button(text("All").size(12))
         .style(theme::segment_button(!is_unread_filter))
         .padding([4, 10])
-        .on_press(NotificationMessage::ToggleShowAll);
+        .on_press(NotificationMessage::Filter(FilterMessage::ToggleShowAll));
 
     let filter_segment =
         container(row![unread_btn, all_btn].spacing(0)).style(theme::segment_container);
@@ -122,7 +124,7 @@ pub fn view_top_bar<'a>(
         )
         .style(theme::ghost_button)
         .padding([4, 8])
-        .on_press(NotificationMessage::MarkAllAsRead)
+        .on_press(NotificationMessage::Thread(ThreadMessage::MarkAllAsRead))
         .into()
     } else {
         Space::new().width(0).into()
@@ -183,7 +185,7 @@ pub fn view_top_bar<'a>(
         }
     })
     .padding([4, 8])
-    .on_press(NotificationMessage::ToggleBulkMode);
+    .on_press(NotificationMessage::Bulk(BulkMessage::ToggleMode));
 
     // Middle container
     let middle_controls = row![

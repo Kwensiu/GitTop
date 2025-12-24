@@ -8,13 +8,15 @@
 //! - Widget builders: `account_badge()`, `priority_indicator()`, `silent_indicator()`
 //! - `notification_item()`: Coordinates layout using the visual state
 
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Fill};
 
-use crate::github::types::SubjectType;
+use crate::github::types::{self, SubjectType};
 use crate::settings::IconTheme;
 use crate::ui::screens::notifications::helper::ProcessedNotification;
-use crate::ui::screens::notifications::NotificationMessage;
+use crate::ui::screens::notifications::messages::{
+    NotificationMessage, ThreadMessage, ViewMessage,
+};
 use crate::ui::screens::settings::rule_engine::RuleAction;
 use crate::ui::{icons, theme};
 
@@ -69,7 +71,7 @@ impl NotificationVisualState {
         let subject_color = Self::color_for_subject_type(subject_type);
 
         // Priority styling only applies when in the priority group
-        let is_priority = is_priority_group && action == RuleAction::Priority;
+        let is_priority = is_priority_group && action == RuleAction::Important;
         let is_silent = action == RuleAction::Silent;
 
         // Bar color: priority gets warning, unread gets subject color, read gets transparent
@@ -283,9 +285,9 @@ pub fn notification_item(
         // - Dense (power mode): Select for details panel view
         // - Standard: Open in browser
         let click_message = if dense {
-            NotificationMessage::SelectNotification(notif.id.clone())
+            NotificationMessage::View(ViewMessage::SelectNotification(notif.id.clone()))
         } else {
-            NotificationMessage::Open(notif.id.clone())
+            NotificationMessage::Thread(ThreadMessage::Open(notif.id.clone()))
         };
 
         // Wrap in button for click handling
@@ -365,7 +367,8 @@ fn build_standard_layout<'a>(
     }
 
     // Build time row with optional priority indicator
-    let time_row = build_time_row(visual, &notif.time_ago, metrics.meta_size, p);
+    let time_ago = types::format_time_ago(notif.updated_at);
+    let time_row = build_time_row(visual, time_ago, metrics.meta_size, p);
 
     row![
         column![title, meta_row]
@@ -414,7 +417,8 @@ fn build_dense_layout<'a>(
     }
 
     // Build time row with optional priority indicator
-    let time_row = build_time_row(visual, &notif.time_ago, metrics.meta_size, p);
+    let time_ago = types::format_time_ago(notif.updated_at);
+    let time_row = build_time_row(visual, time_ago, metrics.meta_size, p);
 
     row![
         column![
@@ -443,7 +447,7 @@ fn build_dense_layout<'a>(
 /// Builds the time row with optional priority indicator.
 fn build_time_row<'a>(
     visual: &NotificationVisualState,
-    time_ago: &'a str,
+    time_ago: String,
     meta_size: f32,
     p: &theme::ThemePalette,
 ) -> iced::widget::Row<'a, NotificationMessage> {
@@ -468,11 +472,10 @@ fn build_card<'a>(
 
     // Use a fixed-size accent bar instead of Fill to avoid layout collapse
     // when nested in rows without explicit height
-    let accent_bar = container(Space::new().width(3))
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(bar_color)),
-            ..Default::default()
-        });
+    let accent_bar = container(Space::new().width(3)).style(move |_| container::Style {
+        background: Some(iced::Background::Color(bar_color)),
+        ..Default::default()
+    });
 
     container(
         row![accent_bar, content_element]
