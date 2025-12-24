@@ -81,13 +81,19 @@ Binary will be at `target/release/gittop` (Linux) or `target\release\gittop.exe`
 **Linux:**
 ```bash
 # Debian/Ubuntu
-sudo apt install libdbus-1-dev
+sudo apt install pkg-config libglib2.0-dev
 
 # Fedora
-sudo dnf install dbus-devel
+sudo dnf install pkg-config glib2-devel
 
 # Arch
-sudo pacman -S dbus
+sudo pacman -S pkg-config glib2
+
+# If building using clang (mold) instead of gcc additionally install
+sudo apt install clang xdotool
+sudo dnf install clang xdotool
+sudo pacman -S clang xdotool
+
 ```
 
 **Windows:** No additional dependencies.
