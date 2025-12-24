@@ -1,0 +1,22 @@
+# Maintainer: Amar <your-email@example.com>
+pkgname=gittop-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A lightweight GitHub notifications client. Why spin up a browser just to check your GitHub notifications?"
+arch=('x86_64')
+url="https://github.com/AmarBego/GitTop"
+license=('AGPL-3.0-only')
+provides=('gittop')
+conflicts=('gittop')
+# Minimal deps - verify with `ldd gittop` after first Linux build
+depends=('gcc-libs')
+optdepends=('libnotify: desktop notifications')
+source=("gittop-linux-x86_64-${pkgver}.tar.gz::https://github.com/AmarBego/GitTop/releases/download/v${pkgver}/gittop-linux-x86_64.tar.gz")
+sha256sums=('PLACEHOLDER_SHA256_HASH')
+
+package() {
+    cd "${srcdir}/gittop-linux-x86_64"
+    install -Dm755 "gittop" "${pkgdir}/usr/bin/gittop"
+    install -Dm644 "LICENSE.md" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

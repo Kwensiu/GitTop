@@ -6,6 +6,11 @@ description = "Why spin up a browser just to check your GitHub notifications?"
 authors = ["Amar"]
 license = "AGPL-3.0-only"
 
+[[bin]]
+name = "gittop"
+path = "src/main.rs"
+
+
 [dependencies]
 # Iced GUI framework - using software renderer (tiny-skia) for minimal memory footprint
 iced = { version = "0.14.0-dev", default-features = false, features = [

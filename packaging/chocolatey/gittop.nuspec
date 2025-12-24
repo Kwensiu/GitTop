@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>gittop</id>
+    <version>{{VERSION}}</version>
+    <title>GitTop</title>
+    <authors>Amar</authors>
+    <owners>Amar</owners>
+    <license type="expression">AGPL-3.0-only</license>
+    <projectUrl>https://github.com/AmarBego/GitTop</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>A lightweight GitHub notifications client. Why spin up a browser just to check your GitHub notifications?</description>
+    <summary>Lightweight GitHub notifications desktop client</summary>
+    <releaseNotes>https://github.com/AmarBego/GitTop/releases/tag/v{{VERSION}}</releaseNotes>
+    <tags>github notifications desktop client rust</tags>
+    <packageSourceUrl>https://github.com/AmarBego/GitTop/tree/main/packaging/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/AmarBego/GitTop#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/AmarBego/GitTop/issues</bugTrackerUrl>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
