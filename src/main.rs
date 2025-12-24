@@ -77,6 +77,9 @@ fn main() -> iced::Result {
 
     platform::enable_dark_mode();
 
+    // Initialize tray subsystem (GTK on Linux)
+    platform::init_tray();
+
     let _tray = match tray::TrayManager::new() {
         Ok(t) => Some(t),
         Err(e) => {
@@ -105,11 +108,16 @@ fn main() -> iced::Result {
     // Load window icon for title bar
     let window_icon = load_window_icon();
 
-    // Window settings with icon
+    // Window settings with icon and platform-specific configuration
     let window_settings = iced::window::Settings {
         size: window_size,
         position: window_position,
         icon: window_icon,
+        #[cfg(target_os = "linux")]
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: "gittop".to_string(),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
