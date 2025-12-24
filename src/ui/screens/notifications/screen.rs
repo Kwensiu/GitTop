@@ -470,11 +470,11 @@ impl NotificationsScreen {
     fn update_thread(&mut self, message: ThreadMessage) -> Task<NotificationMessage> {
         match message {
             ThreadMessage::Open(id) => {
-                if let Some(notif) = self.all_notifications.iter().find(|n| n.id == id) {
-                    if let Some(ref url) = notif.url {
-                        let web_url = api_url_to_web_url(url);
-                        let _ = open::that(&web_url);
-                    }
+                if let Some(notif) = self.all_notifications.iter().find(|n| n.id == id)
+                    && let Some(ref url) = notif.url
+                {
+                    let web_url = api_url_to_web_url(url);
+                    let _ = open::that(&web_url);
                 }
                 let client = self.client.clone();
                 let notif_id = id.clone();
@@ -502,11 +502,11 @@ impl NotificationsScreen {
                 )
             }
             ThreadMessage::MarkAsReadComplete(id, result) => {
-                if result.is_ok() {
-                    if let Some(notif) = self.all_notifications.iter_mut().find(|n| n.id == id) {
-                        notif.unread = false;
-                        self.rebuild_groups();
-                    }
+                if result.is_ok()
+                    && let Some(notif) = self.all_notifications.iter_mut().find(|n| n.id == id)
+                {
+                    notif.unread = false;
+                    self.rebuild_groups();
                 }
                 Task::none()
             }
@@ -688,13 +688,12 @@ impl NotificationsScreen {
                 Task::none()
             }
             ViewMessage::OpenInBrowser => {
-                if let Some(ref id) = self.selected_notification_id {
-                    if let Some(notif) = self.all_notifications.iter().find(|n| &n.id == id) {
-                        if let Some(ref url) = notif.url {
-                            let web_url = api_url_to_web_url(url);
-                            let _ = open::that(&web_url);
-                        }
-                    }
+                if let Some(ref id) = self.selected_notification_id
+                    && let Some(notif) = self.all_notifications.iter().find(|n| &n.id == id)
+                    && let Some(ref url) = notif.url
+                {
+                    let web_url = api_url_to_web_url(url);
+                    let _ = open::that(&web_url);
                 }
                 Task::none()
             }

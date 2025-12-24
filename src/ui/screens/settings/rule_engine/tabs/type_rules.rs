@@ -43,7 +43,7 @@ fn view_grouped_rules<'a>(
     let p = theme::palette();
 
     if rules.is_empty() {
-        return view_empty_state("No type rules configured.", icon_theme).into();
+        return view_empty_state("No type rules configured.", icon_theme);
     }
 
     // Group by (NotificationReason, String) -> Vec<&TypeRule>

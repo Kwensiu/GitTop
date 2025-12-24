@@ -171,25 +171,25 @@ fn view_issue<'a>(
     ]
     .width(Fill);
 
-    if let Some(body) = &issue.body {
-        if !body.is_empty() {
-            let truncated = truncate_text(body, 1500);
-            col = col.push(
-                container(text(truncated).size(13).color(text_secondary))
-                    .padding(12)
-                    .width(Fill)
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(bg_control)),
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            color: border_subtle,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    }),
-            );
-            col = col.push(Space::new().height(16));
-        }
+    if let Some(body) = &issue.body
+        && !body.is_empty()
+    {
+        let truncated = truncate_text(body, 1500);
+        col = col.push(
+            container(text(truncated).size(13).color(text_secondary))
+                .padding(12)
+                .width(Fill)
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(bg_control)),
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        color: border_subtle,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }),
+        );
+        col = col.push(Space::new().height(16));
     }
 
     if !issue.labels.is_empty() {
@@ -261,25 +261,25 @@ fn view_pull_request<'a>(
     ]
     .width(Fill);
 
-    if let Some(body) = &pr.body {
-        if !body.is_empty() {
-            let truncated = truncate_text(body, 1500);
-            col = col.push(
-                container(text(truncated).size(13).color(text_secondary))
-                    .padding(12)
-                    .width(Fill)
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(bg_control)),
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            color: border_subtle,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    }),
-            );
-            col = col.push(Space::new().height(16));
-        }
+    if let Some(body) = &pr.body
+        && !body.is_empty()
+    {
+        let truncated = truncate_text(body, 1500);
+        col = col.push(
+            container(text(truncated).size(13).color(text_secondary))
+                .padding(12)
+                .width(Fill)
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(bg_control)),
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        color: border_subtle,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }),
+        );
+        col = col.push(Space::new().height(16));
     }
 
     col = col.push(
@@ -433,25 +433,25 @@ fn view_discussion<'a>(
     col = col.push(Space::new().height(16));
 
     // Body
-    if let Some(body) = &discussion.body {
-        if !body.is_empty() {
-            let truncated = truncate_text(body, 1500);
-            col = col.push(
-                container(text(truncated).size(13).color(text_secondary))
-                    .padding(12)
-                    .width(Fill)
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(bg_control)),
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            color: border_subtle,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    }),
-            );
-            col = col.push(Space::new().height(16));
-        }
+    if let Some(body) = &discussion.body
+        && !body.is_empty()
+    {
+        let truncated = truncate_text(body, 1500);
+        col = col.push(
+            container(text(truncated).size(13).color(text_secondary))
+                .padding(12)
+                .width(Fill)
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(bg_control)),
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        color: border_subtle,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }),
+        );
+        col = col.push(Space::new().height(16));
     }
 
     // Comments count

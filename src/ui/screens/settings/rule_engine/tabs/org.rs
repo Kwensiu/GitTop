@@ -20,7 +20,7 @@ pub fn view_org_rules_tab(
         view_empty_state(
             "No organization rules configured. Organizations will be auto-discovered from your notifications.",
             icon_theme,
-        ).into()
+        )
     } else {
         column(rules.org_rules.iter().flat_map(|rule| {
             [

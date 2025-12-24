@@ -33,10 +33,10 @@ fn parse_cli_args() {
     let mut args = std::env::args().skip(1).peekable();
 
     while let Some(arg) = args.next() {
-        if matches!(arg.as_str(), "--mock-notifications" | "-m") {
-            if let Some(Ok(count)) = args.next().map(|s| s.parse::<usize>()) {
-                MOCK_NOTIFICATION_COUNT.store(count, Ordering::Relaxed);
-            }
+        if matches!(arg.as_str(), "--mock-notifications" | "-m")
+            && let Some(Ok(count)) = args.next().map(|s| s.parse::<usize>())
+        {
+            MOCK_NOTIFICATION_COUNT.store(count, Ordering::Relaxed);
         }
     }
 }

@@ -62,7 +62,7 @@ pub enum Screen {
     /// Settings screen.
     Settings(SettingsScreen),
     /// Rule Engine screen.
-    RuleEngine(RuleEngineScreen, RuleEngineOrigin),
+    RuleEngine(Box<RuleEngineScreen>, RuleEngineOrigin),
 }
 
 impl Screen {
@@ -655,7 +655,7 @@ impl App {
         let rules = NotificationRuleSet::load();
         let rule_engine_screen = RuleEngineScreen::new(rules, settings.clone());
         *self = App::Authenticated(
-            Box::new(Screen::RuleEngine(rule_engine_screen, origin)),
+            Box::new(Screen::RuleEngine(Box::new(rule_engine_screen), origin)),
             ctx.with_settings(settings),
         );
         Task::none()
