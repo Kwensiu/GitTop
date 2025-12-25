@@ -9,6 +9,7 @@
             "hash": "PLACEHOLDER_SHA256_HASH"
         }
     },
+    "extract_dir": "gittop-windows-x86_64",
     "bin": "gittop.exe",
     "checkver": "github",
     "autoupdate": {

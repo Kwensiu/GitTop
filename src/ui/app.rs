@@ -639,15 +639,25 @@ impl App {
             }
 
             // On Linux daemon mode, window closes directly without CloseRequested
-            // Handle Closed event to mark as hidden for proper reopen behavior
+            // Handle Closed event: either tray mode or full exit
             #[cfg(target_os = "linux")]
             window::Event::Closed => {
-                window_state::set_hidden(true);
-                if let Some(screen) = self.notification_screen_mut() {
-                    screen.enter_low_memory_mode();
+                let minimize_to_tray = self
+                    .current_settings()
+                    .map(|s| s.minimize_to_tray)
+                    .unwrap_or(false);
+
+                if minimize_to_tray {
+                    window_state::set_hidden(true);
+                    if let Some(screen) = self.notification_screen_mut() {
+                        screen.enter_low_memory_mode();
+                    }
+                    crate::platform::trim_memory();
+                    Task::none()
+                } else {
+                    // Minimize to tray disabled - actually exit the daemon
+                    exit()
                 }
-                crate::platform::trim_memory();
-                Task::none()
             }
 
             _ => Task::none(),
