@@ -106,6 +106,8 @@ jobs:
           cp target/${{ env.TARGET_LINUX }}/release/${{ env.APP_NAME }} ${{ env.APP_NAME }}-linux-x86_64/
           cp LICENSE.md ${{ env.APP_NAME }}-linux-x86_64/
           cp README.md ${{ env.APP_NAME }}-linux-x86_64/
+          cp src/platform/resources/gittop.desktop ${{ env.APP_NAME }}-linux-x86_64/
+          cp assets/images/GitTop-256x256.png ${{ env.APP_NAME }}-linux-x86_64/gittop.png
           chmod +x ${{ env.APP_NAME }}-linux-x86_64/${{ env.APP_NAME }}
           tar --sort=name \
               --owner=0 --group=0 --numeric-owner \

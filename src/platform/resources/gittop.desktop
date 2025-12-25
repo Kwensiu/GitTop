@@ -2,7 +2,7 @@
 Name=GitTop
 Comment=GitHub Notifications Manager
 GenericName=GitHub Notifications
-Exec=GitTop
+Exec=gittop
 Icon=gittop
 Terminal=false
 Type=Application

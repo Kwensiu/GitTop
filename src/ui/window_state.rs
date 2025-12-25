@@ -1,6 +1,6 @@
 //! Window state management helpers.
 
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use iced::window::Id as WindowId;
@@ -10,15 +10,17 @@ use iced::{Task, window};
 const POWER_MODE_WIDTH: f32 = 1410.0;
 const POWER_MODE_HEIGHT: f32 = 700.0;
 
-static MAIN_WINDOW_ID: OnceLock<WindowId> = OnceLock::new();
+static MAIN_WINDOW_ID: Mutex<Option<WindowId>> = Mutex::new(None);
 static IS_WINDOW_HIDDEN: AtomicBool = AtomicBool::new(false);
 
 pub fn set_window_id(id: WindowId) {
-    let _ = MAIN_WINDOW_ID.set(id);
+    if let Ok(mut guard) = MAIN_WINDOW_ID.lock() {
+        *guard = Some(id);
+    }
 }
 
 pub fn get_window_id() -> Option<WindowId> {
-    MAIN_WINDOW_ID.get().copied()
+    MAIN_WINDOW_ID.lock().ok().and_then(|guard| *guard)
 }
 
 pub fn is_hidden() -> bool {

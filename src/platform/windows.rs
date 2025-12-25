@@ -1,8 +1,61 @@
 //! Windows-specific platform implementations.
 
+use crate::settings::AppSettings;
+use crate::ui::App;
+use iced::window::Position;
+use iced::{Font, application};
 use std::ffi::CString;
 
-/// Find and focus an existing GitTop window.
+/// Run the iced application using normal application mode.
+/// Windows supports Hidden mode properly, so no need for daemon.
+pub fn run_app() -> iced::Result {
+    let settings = AppSettings::load();
+
+    let window_size = if settings.window_width >= 100.0 && settings.window_height >= 100.0 {
+        iced::Size::new(settings.window_width, settings.window_height)
+    } else {
+        iced::Size::new(800.0, 640.0)
+    };
+
+    let window_position = match (settings.window_x, settings.window_y) {
+        (Some(x), Some(y)) if x > -10000 && y > -10000 => {
+            Position::Specific(iced::Point::new(x as f32, y as f32))
+        }
+        _ => Position::Centered,
+    };
+
+    let window_icon = load_window_icon();
+
+    let window_settings = iced::window::Settings {
+        size: window_size,
+        position: window_position,
+        icon: window_icon,
+        ..Default::default()
+    };
+
+    application(App::new, App::update, App::view)
+        .title(|app: &App| app.title())
+        .theme(|app: &App| app.theme())
+        .subscription(App::subscription)
+        .window(window_settings)
+        .antialiasing(true)
+        .default_font(Font::DEFAULT)
+        .exit_on_close_request(false)
+        .run()
+}
+
+fn load_window_icon() -> Option<iced::window::Icon> {
+    use std::io::Cursor;
+    const ICON_BYTES: &[u8] = include_bytes!("../../assets/images/favicon-32x32.png");
+    let img = image::ImageReader::new(Cursor::new(ICON_BYTES))
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?
+        .to_rgba8();
+    let (width, height) = img.dimensions();
+    iced::window::icon::from_rgba(img.into_raw(), width, height).ok()
+}
 pub fn focus_existing_window() {
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{

@@ -45,12 +45,7 @@ cp "$PROJECT_ROOT/assets/images/GitTop-512x512.png" "$INSTALL_ICONS/512x512/apps
 echo "Installing desktop entry..."
 cp "$PROJECT_ROOT/src/platform/resources/gittop.desktop" "$INSTALL_APPS/gittop.desktop"
 
-# Update desktop file to ensure Exec name matches what we installed
-# We assume 'gittop' is in PATH if installed to ~/.local/bin, but being explicit doesn't hurt if we want absolute path
-# For now, keeping Exec=GitTop or Exec=gittop is fine if ~/.local/bin is in PATH.
-# Standard sed to ensure Exec line is what we expect? 
-# The source desktop file has "Exec=GitTop". Let's standardize on "gittop".
-sed -i 's/^Exec=GitTop/Exec=gittop/' "$INSTALL_APPS/gittop.desktop"
+
 
 echo "Updating caches..."
 if command -v gtk-update-icon-cache &> /dev/null; then

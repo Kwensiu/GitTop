@@ -1,0 +1,47 @@
+name: AUR Distribution
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  # Job for stable releases (gittop-bin)
+  aur-stable:
+    name: Update gittop-bin (AUR)
+    runs-on: ubuntu-latest
+    if: "!github.event.release.prerelease"
+    steps:
+      - uses: actions/checkout@v4
+
+      # This action automatically updates checksums and pkgver in PKGBUILD
+      - name: Publish gittop-bin
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: gittop-bin
+          pkgbuild: ./packaging/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.event.release.tag_name }}
+          ssh_keyscan_types: rsa,dsa,ecdsa,ed25519
+          # Force update of checksums even if version didn't change (useful for fixing broken builds)
+          updpkgsums: true
+
+  # Job for beta releases (gittop-beta-bin)
+  aur-beta:
+    name: Update gittop-beta-bin (AUR)
+    runs-on: ubuntu-latest
+    if: "github.event.release.prerelease"
+    steps:
+      - uses: actions/checkout@v4
+  
+      - name: Publish gittop-beta-bin
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: gittop-beta-bin
+          pkgbuild: ./packaging/aur-beta/PKGBUILD  # You would need a separate PKGBUILD for beta
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.event.release.tag_name }}
+          updpkgsums: true

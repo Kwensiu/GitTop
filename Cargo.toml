@@ -69,7 +69,10 @@ sled = "0.34"
 
 # System tray
 tray-icon = "0.21.2"
-image = { version = "0.25", default-features = false, features = ["ico"] }
+image = { version = "0.25", default-features = false, features = [
+    "ico",
+    "png",
+] }
 
 # Single instance (Windows named mutex)
 single-instance = "0.3"

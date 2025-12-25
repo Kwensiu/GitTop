@@ -555,8 +555,23 @@ impl App {
 
         match cmd {
             TrayCommand::ShowWindow => {
+                let is_currently_hidden = window_state::is_hidden();
                 let was_hidden = window_state::restore_from_hidden();
 
+                // On Linux with daemon mode, we closed the window - reopen it
+                #[cfg(target_os = "linux")]
+                let window_task = if is_currently_hidden {
+                    let (id, open_task) = crate::platform::linux::build_initial_window_settings();
+                    window_state::set_window_id(id);
+                    open_task
+                } else {
+                    window_state::get_window_id()
+                        .map(|id| window::gain_focus(id))
+                        .unwrap_or_else(Task::none)
+                };
+
+                // On other platforms, just show the hidden window
+                #[cfg(not(target_os = "linux"))]
                 let window_task = window_state::get_window_id()
                     .map(|id| {
                         Task::batch([
@@ -620,6 +635,18 @@ impl App {
                     s.window_height = size.height;
                     s.save_silent();
                 }
+                Task::none()
+            }
+
+            // On Linux daemon mode, window closes directly without CloseRequested
+            // Handle Closed event to mark as hidden for proper reopen behavior
+            #[cfg(target_os = "linux")]
+            window::Event::Closed => {
+                window_state::set_hidden(true);
+                if let Some(screen) = self.notification_screen_mut() {
+                    screen.enter_low_memory_mode();
+                }
+                crate::platform::trim_memory();
                 Task::none()
             }
 
@@ -714,7 +741,18 @@ impl App {
         }
 
         crate::platform::trim_memory();
-        window::set_mode(window_id, window::Mode::Hidden)
+
+        // On Linux, daemon mode allows closing window completely.
+        // On other platforms, hide the window.
+        #[cfg(target_os = "linux")]
+        {
+            window::close(window_id)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            window::set_mode(window_id, window::Mode::Hidden)
+        }
     }
 
     /// Get mutable reference to settings.
@@ -891,5 +929,38 @@ impl App {
 
         let subs: Vec<_> = tick_sub.into_iter().chain([tray_sub, window_sub]).collect();
         Subscription::batch(subs)
+    }
+
+    // ========================================================================
+    // Daemon Mode Support (Linux)
+    // ========================================================================
+
+    /// Create app and spawn initial window (for daemon mode).
+    #[cfg(target_os = "linux")]
+    pub fn new_for_daemon() -> (Self, Task<Message>) {
+        let (app, restore_task) = Self::new();
+        // Daemon mode: spawn initial window immediately
+        let (window_id, open_task) = crate::platform::linux::build_initial_window_settings();
+        // Store the window ID when it's ready
+        window_state::set_window_id(window_id);
+        (app, Task::batch([restore_task, open_task.discard()]))
+    }
+
+    /// View for daemon (takes window_id parameter).
+    #[cfg(target_os = "linux")]
+    pub fn view_for_daemon(&self, _window_id: window::Id) -> Element<'_, Message> {
+        self.view()
+    }
+
+    /// Title for daemon (takes window_id parameter).
+    #[cfg(target_os = "linux")]
+    pub fn title_for_daemon(&self, _window_id: window::Id) -> String {
+        self.title()
+    }
+
+    /// Theme for daemon (takes window_id parameter).
+    #[cfg(target_os = "linux")]
+    pub fn theme_for_daemon(&self, _window_id: window::Id) -> Theme {
+        self.theme()
     }
 }

@@ -10,10 +10,10 @@ mod windows;
 mod macos;
 
 #[cfg(target_os = "linux")]
-mod linux;
+pub(crate) mod linux;
 
 #[cfg(target_os = "freebsd")]
-mod freebsd;
+pub(crate) mod freebsd;
 
 // Re-export platform functions with unified API
 
@@ -114,4 +114,21 @@ pub fn notify(
 
     #[cfg(target_os = "freebsd")]
     return freebsd::notify(title, body, url).map_err(|e| e.into());
+}
+
+/// Run the iced application.
+/// On Linux/FreeBSD, uses daemon mode to stay alive when window closes.
+/// On Windows/macOS, uses normal application mode.
+pub fn run_app() -> iced::Result {
+    #[cfg(windows)]
+    return windows::run_app();
+
+    #[cfg(target_os = "macos")]
+    return macos::run_app();
+
+    #[cfg(target_os = "linux")]
+    return linux::run_app();
+
+    #[cfg(target_os = "freebsd")]
+    return freebsd::run_app();
 }

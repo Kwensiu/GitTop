@@ -42,7 +42,6 @@ impl TrayManager {
         menu.append(&quit_item)?;
 
         let icon = Self::create_icon()?;
-
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("GitTop - GitHub Notifications")
@@ -69,6 +68,14 @@ impl TrayManager {
     }
 
     pub fn poll_global_events() -> Option<TrayCommand> {
+        // On Linux, pump GTK events so AppIndicator can process D-Bus messages.
+        // Use main_iteration_do(false) for NON-BLOCKING iteration to avoid
+        // conflicting with iced's winit event loop and blocking window events.
+        #[cfg(target_os = "linux")]
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+
         let command = Self::poll_menu_events();
         Self::drain_tray_icon_events();
         command
