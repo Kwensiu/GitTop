@@ -24,6 +24,12 @@
 - **Dual Mode:** Minimalist by default. Enable **Power Mode** for in-app notification viewing, rule engine and more
 - **Stay focused:** Be on top of your notifications
 
+<p align="left">
+  <a href="https://amarbego.github.io/GitTop/">
+    <img src="https://img.shields.io/badge/Read_the_Docs-FF5A47?style=for-the-badge&logo=googledocs&logoColor=white" alt="Read the Docs">
+  </a>
+</p>
+
 <img
   src="assets/images/showcase.png"
   alt="GitTop Logo"

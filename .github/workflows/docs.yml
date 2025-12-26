@@ -3,7 +3,7 @@ name: Deploy Docs
 on:
   push:
     tags:
-      - 'v*[0-9].*[0-9].0' # Matches v0.1.0, v1.2.0. Ignores v0.1.1
+      - 'v*[0-9].*[0-9].*[0-9]' # Matches v0.1.0, v1.2.0. Ignores v0.1.1
   workflow_dispatch:
 
 permissions:

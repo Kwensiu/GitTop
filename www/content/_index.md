@@ -4,7 +4,7 @@ sort_by = "weight"
 +++
 
 <div class="hero">
-  <img src="GitTop/images/text.png" alt="GitTop" class="hero-title">
+  <img src="https://amarbego.github.io/GitTop/images/text.png" alt="GitTop" class="hero-title">
   <p class="tagline">A lightweight desktop client for GitHub notifications.<br>Stay focused, stay on top.</p>
   
   <div class="buttons">
@@ -12,7 +12,7 @@ sort_by = "weight"
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
       Download Now
     </a>
-    <a href="/GitTop/features" class="button secondary">
+    <a href="https://amarbego.github.io/GitTop/features" class="button secondary">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
       Explore Features
     </a>
