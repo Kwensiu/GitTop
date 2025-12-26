@@ -24,6 +24,12 @@
 - **Dual Mode:** Minimalist by default. Enable **Power Mode** for in-app notification viewing, rule engine and more
 - **Stay focused:** Be on top of your notifications
 
+<p align="left">
+  <a href="https://amarbego.github.io/GitTop/">
+    <img src="https://img.shields.io/badge/Read_the_Docs-FF5A47?style=for-the-badge&logo=googledocs&logoColor=white" alt="Read the Docs">
+  </a>
+</p>
+
 <img
   src="assets/images/showcase.png"
   alt="GitTop Logo"
@@ -37,10 +43,16 @@
 
 ### Windows
 
+**Installer (recommended):**
+- [Download MSI installer](https://github.com/AmarBego/GitTop/releases/latest) Standard Windows installer
+- [Download EXE installer](https://github.com/AmarBego/GitTop/releases/latest) Wizard-based setup with optional startup integration
+
 **Scoop:**
 ```pwsh
-Coming soon
+scoop bucket add gittop https://github.com/AmarBego/GitTop
+scoop install gittop
 ```
+> *Once GitTop is added to the [Scoop Extras](https://github.com/ScoopInstaller/Extras) bucket, you'll be able to install directly with `scoop install gittop`.*
 
 **Chocolatey:**
 ```pwsh
