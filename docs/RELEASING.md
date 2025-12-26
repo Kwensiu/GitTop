@@ -1,135 +1,140 @@
-# Release Handbook
+# Release Process
 
-## Version Format
+This guide covers how we version and release GitTop.
 
-GitTop follows [Semantic Versioning](https://semver.org/):
+## Versioning Strategy
 
-```
-vMAJOR.MINOR.PATCH[-PRERELEASE]
-```
+We follow a standard `vMAJOR.MINOR.PATCH` format with optional pre-release suffixes.
 
-| Component | When to increment |
-|-----------|-------------------|
-| **MAJOR** | Breaking changes (API, config format, behavior) |
-| **MINOR** | New features, backward compatible |
-| **PATCH** | Bug fixes only |
+| Component | Description |
+|-----------|-------------|
+| **MAJOR** | Major milestones that redefine the maturity or direction of the product. |
+| **MINOR** | New features and stable improvements. |
+| **PATCH** | Incremental improvements toward the next stable release (bug fixes, refinements, small features). |
 
-## Pre-release Tags
+This versioning scheme prioritizes clarity for users over strict semantic versioning rules.
 
-| Tag | Purpose | Downstream effect |
-|-----|---------|-------------------|
-| `v0.1.0-alpha.1` | Early testing, unstable | GitHub pre-release only |
-| `v0.1.0-beta.1` | Feature complete, needs testing | GitHub pre-release only |
-| `v0.1.0-rc.1` | Release candidate, final testing | GitHub pre-release only |
-| `v0.1.0` | **Stable release** | Updates Scoop/Chocolatey/AUR |
+### Pre-releases
 
-Pre-releases create GitHub releases marked as "pre-release" but don't trigger package manager updates.
+We use suffixes to mark pre-release builds.
+
+- **`alpha`**: Internal builds. Things might be broken.
+- **`beta`**: Public testing builds. Feature complete but needs polish.
+- **`rc`**: Release Candidate. We think this is ready for stable unless we find a critical bug.
+
+**Examples:**
+- `1.3.0` (Stable)
+- `1.3.1-alpha.1` (Internal test)
+- `1.3.1-rc.1` (Release candidate)
 
 ---
 
 ## How to Release
 
-### 1. Update version in Cargo.toml
+Follow these steps to ship a new version.
+
+### 1. Bump the Version
+
+Update the version number in your `Cargo.toml`:
+
 ```toml
 version = "0.1.0"
 ```
 
-### 2. Commit the version bump
+Commit this change:
+
 ```bash
 git add Cargo.toml
 git commit -m "chore: bump version to 0.1.0"
 git push
 ```
 
-### 3. Create and push tag
+### 2. Create the Tag
+
+Create and push a git tag for the version. The tag triggers the release pipeline.
+
+For a release candidate:
 ```bash
-# For release candidate (test first!)
 git tag v0.1.0-rc.1
 git push origin v0.1.0-rc.1
+```
 
-# For stable release
+For a stable release:
+```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-### 4. What happens automatically
+### 3. CI/CD Process
 
-1. **release.yml** triggers on the tag
-2. Builds Windows + Linux binaries and installers
-3. Creates GitHub Release with:
-   - `gittop-windows-x86_64.zip` — Portable archive
-   - `gittop-X.Y.Z-setup.exe` — EXE installer (Inno Setup)
-   - `gittop-linux-x86_64.tar.gz` — Linux archive
-   - `SHA256SUMS.txt`
-4. Downstream workflows update package managers (stable releases only)
+Once the tag is pushed, the `release.yml` workflow kicks in:
 
-### 5. Package manager updates (automated)
+1.  **Builds** binaries and installers for Windows and Linux.
+2.  **Creates a GitHub Release** with the artifacts:
+    - `gittop-windows-x86_64.zip`
+    - `gittop-X.Y.Z-setup.exe`
+    - `gittop-linux-x86_64.tar.gz`
+    - `SHA256SUMS.txt`
+3.  **Updates Package Managers** (Stable releases only):
+    - **Scoop**: Updates the manifest in our bucket.
+    - **Chocolatey**: Pushes the new package.
+    - **AUR**: Updates the PKGBUILD.
 
-For **stable releases only**, downstream workflows automatically update:
-- **Scoop** — Updates `bucket/gittop.json` with new version/checksum
-- **Chocolatey** — Builds and pushes `.nupkg` to Chocolatey.org
-- **AUR** — Updates `PKGBUILD` and pushes to AUR
-
-Prereleases (`-alpha`, `-beta`, `-rc`) skip package manager updates.
+> **Note**: Pre-releases do not trigger package manager updates.
 
 ---
 
-## Version Matching Rule
+## Important Rules
 
-The tag version (without pre-release suffix) **must match** `Cargo.toml`:
-
-| Cargo.toml | Valid tags |
-|------------|------------|
-| `0.1.0` | `v0.1.0`, `v0.1.0-rc.1`, `v0.1.0-beta.2` |
-| `0.2.0` | `v0.2.0`, `v0.2.0-alpha.1` |
-
-The release workflow **fails** if they don't match.
+**Tag Matching**: The git tag must match the version in `Cargo.toml`.
+- `Cargo.toml`: `0.1.0` -> Tag: `v0.1.0` or `v0.1.0-rc.1`
+- If they don't match, the release workflow will fail.
 
 ---
 
-## Quick Reference
+## Cheat Sheet
+
+Common commands for releasing:
 
 ```bash
-# Test the release pipeline
+# Release a candidate
 git tag v0.1.0-rc.1 && git push origin v0.1.0-rc.1
 
-# Ship stable release
+# Release stable
 git tag v0.1.0 && git push origin v0.1.0
 
-# Delete a bad tag (if needed)
+# Delete a mistake
 git tag -d v0.1.0-rc.1
 git push origin :refs/tags/v0.1.0-rc.1
 ```
 
 ---
 
-## OBSOLETE FOR NOW
+## Inactive: MSI Installer Details
 
-> The following sections document MSI installer functionality that is currently disabled pending code signing setup.
+> These features are currently disabled. We need code signing before we can fully support MSI installers.
 
-### Tagging Limits (MSI-specific)
+### MSI Version Limits
 
-Due to MSI version constraints, there are practical limits on prerelease counts:
+MSI has strict versioning constraints that limit how many updates we can release per minor version:
 
-| Limit | Max Value | If exceeded... |
-|-------|-----------|----------------|
-| Patches per minor | 6 | Bump the minor version |
-| Prereleases per stage | 999 | Bump the patch or stage |
+| Constraint | Limit | Solution |
+|------------|-------|----------|
+| Patches per Minor | ~6 | Bump the Minor version |
+| Pre-release Builds | 999 | Bump the Patch or Stage |
 
-**In practice:** If you hit `alpha.999` or `0.1.7`, bump the minor version. These limits far exceed normal usage.
+Practically, this means if you hit `0.1.7` or `alpha.999`, it's time to bump the minor version anyway.
 
-### MSI Version Mapping
+### How Versions Map to MSI
 
-Windows Installer (MSI) requires numeric `Major.Minor.Build.Revision` format. SemVer is mapped using:
+Windows Installer only understands `Major.Minor.Build`. To support SemVer (like `alpha` or `rc`), we map the suffixes to the Build number.
 
-**Formula:** `Build = (patch × 10000) + base_offset + N`
+**Formula**: `Build = (Patch * 10000) + StageOffset + N`
 
-| Stage | Base | Example SemVer | MSI ProductVersion |
-|-------|------|----------------|---------------------|
+| Stage | Offset | Example | MSI Version |
+|-------|--------|---------|-------------|
 | alpha | 1000 | `0.1.0-alpha.5` | `0.1.1005.0` |
 | stable | 4000 | `0.1.0` | `0.1.4000.0` |
 | stable | 4000 | `0.1.1` | `0.1.14000.0` |
 
-This ensures upgrades work correctly: **0.1.0 → 0.1.1-alpha.1 → 0.1.1**.
-
-> Max 6 patches per minor (build > 65535 fails). Filename uses full SemVer for humans.
+This logic ensures that Windows sees `alpha.1` as "newer" than the base version, but "older" than `beta` or stable, allowing upgrades to work correctly.

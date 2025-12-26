@@ -17,10 +17,7 @@ pub fn view_org_rules_tab(
     let p = theme::palette();
 
     let rules_list: Element<_> = if rules.org_rules.is_empty() {
-        view_empty_state(
-            "No organization rules configured. Organizations will be auto-discovered from your notifications.",
-            icon_theme,
-        )
+        view_empty_state("Coming soon", icon_theme)
     } else {
         column(rules.org_rules.iter().flat_map(|rule| {
             [

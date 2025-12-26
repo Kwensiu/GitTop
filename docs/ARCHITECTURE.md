@@ -1,48 +1,52 @@
-# Platform Architecture
+# Architecture & Platform Specifics
 
-## Philosophy
+GitTop tries to feel native everywhere. To do that, we sometimes have to do things differently on each OS. All that messy logic is hidden inside `src/platform/`.
 
-GitTop uses platform-specific implementations where behavior differs. The `src/platform/` module abstracts these differences behind a unified API.
+## How the App Runs (`run_app`)
 
-## Application Runner (`run_app`)
+The core application loop changes depending on where you are.
 
-| Platform | Mode | Reason |
-|----------|------|--------|
-| **Windows** | `iced::application` | `window::Mode::Hidden` works correctly |
-| **macOS** | `iced::application` | Hidden mode supported |
-| **Linux/FreeBSD** | `iced::daemon` | Hidden mode broken on Wayland; daemon keeps process alive with zero windows |
+| OS | Runner Mode | Why? |
+|----|-------------|------|
+| **Windows / macOS** | `iced::application` | Standard desktop app. We can just hide the window when minimizing to tray. |
+| **Linux** | `iced::daemon` | Wayland makes "hiding" windows complicated. |
 
-### Linux Daemon Decision
+### The Linux Wayland Situation
 
-Wayland compositors don't support hiding windows via `winit` (the window library iced uses). The workaround is:
-1. Use `iced::daemon` so the process stays alive without windows
-2. On "minimize to tray": `window::close()` destroys the window
-3. On "show from tray": `window::open()` creates a new window
+On Linux (especially Wayland), you can't reliably "hide" a window. If you try, it might just minimize or stay visible.
 
-This is the officially recommended Wayland approach.
+So, on Linux we use `iced::daemon`. This lets the process run without *any* window open.
+*   **Minimize to Tray**: We actually `close()` (destroy) the window.
+*   **Open from Tray**: We `open()` (create) a fresh window.
 
-## Tray Icon
+It sounds drastic, but it's the correct way to handle tray-only apps on modern Linux compositors.
 
-Built with `tray-icon` crate:
-- **Windows**: Native Win32 system tray
-- **Linux/FreeBSD**: GTK via AppIndicator/libayatana (requires `gtk::init()` before use)
-- **macOS**: Native NSStatusItem
+## Desktop Integration
 
-## Notifications
+### System Tray
 
-| Platform | Implementation |
-|----------|----------------|
-| Windows | WinRT Toast (`tauri-winrt-notification`) |
-| Linux/FreeBSD | DBus (`notify-rust`) |
-| macOS | NSUserNotificationCenter |
+We use the `tray-icon` crate to sit in your status bar.
 
-## Memory Management
+*   **Windows**: Standard Win32 tray icon.
+*   **Linux**: Uses `libayatana` or AppIndicator. We have to initialize GTK first.
+*   **macOS**: Native status item.
 
-- **Windows**: `EmptyWorkingSet()` trims working set
-- **Linux (glibc)**: `malloc_trim()` releases memory to OS
-- Called when minimizing to tray
+### Notifications
 
-## Dark Mode
+We use the native notification systems so GitTop feels integrated.
 
-- **Windows**: Undocumented `SetPreferredAppMode()` from uxtheme.dll
-- **Linux/macOS**: Follows system GTK/Qt theme automatically
+*   **Windows**: WinRT Toasts (via `tauri-winrt-notification`).
+*   **Linux**: DBus notifications (via `notify-rust`).
+*   **macOS**: Native Notification Center.
+
+### Memory Optimization
+
+We are aggressive about memory usage. When you minimize the app to the tray, we ask the OS to reclaim unused memory.
+
+*   **Windows**: Calls `EmptyWorkingSet()` to trim the working set.
+*   **Linux (glibc)**: Calls `malloc_trim()` to release heap memory back to the OS.
+
+### Dark Mode
+
+*   **Windows**: We call the undocumented `SetPreferredAppMode` API in `uxtheme.dll` to force the window frame to match your system theme.
+*   **Linux / macOS**: Usually "Just Works" by following the system GTK/Qt theme.
