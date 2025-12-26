@@ -14,7 +14,7 @@
     <releaseNotes>https://github.com/AmarBego/GitTop/releases/tag/v{{VERSION}}</releaseNotes>
     <tags>github notifications desktop client rust</tags>
     <packageSourceUrl>https://github.com/AmarBego/GitTop/tree/main/packaging/chocolatey</packageSourceUrl>
-    <docsUrl>https://github.com/AmarBego/GitTop#readme</docsUrl>
+    <docsUrl>https://amarbego.github.io/GitTop/</docsUrl>
     <bugTrackerUrl>https://github.com/AmarBego/GitTop/issues</bugTrackerUrl>
   </metadata>
   <files>
