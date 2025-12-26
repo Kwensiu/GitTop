@@ -1,3 +1,9 @@
++++
+title = "Architecture & Codebase"
+description = "High-level codebase structure and platform-specific implementation details"
+weight = 1
++++
+
 # Architecture & Codebase
 
 This document explains both the high-level codebase structure and the low-level platform specifics.

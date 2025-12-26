@@ -1,3 +1,9 @@
++++
+title = "Release Process"
+description = "How to version and release GitTop"
+weight = 4
++++
+
 # Release Process
 
 This guide covers how we version and release GitTop.

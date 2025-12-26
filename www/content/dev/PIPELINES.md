@@ -1,3 +1,9 @@
++++
+title = "Release Architecture"
+description = "CI/CD pipelines and distribution workflows for GitTop releases"
+weight = 3
++++
+
 # Release Architecture
 
 This document maps out how GitTop gets from a git tag to a published release.
