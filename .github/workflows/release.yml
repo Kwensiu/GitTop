@@ -143,6 +143,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          tag="${{ github.ref_name }}"
+          version="${tag#v}"
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          cargo_version=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          tag_version=$(echo "${{ steps.version.outputs.version }}" | sed 's/-.*//')
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "Version mismatch: Cargo.toml has '$cargo_version' but tag is '$tag_version'"
+            exit 1
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

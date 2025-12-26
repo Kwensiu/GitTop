@@ -65,9 +65,12 @@ jobs:
           VERSION="${{ steps.release.outputs.version }}"
           CHECKSUM="${{ steps.download.outputs.checksum }}"
           
-          # Update the manifest with actual values
-          sed -i "s/{{VERSION}}/$VERSION/g" bucket/gittop.json
-          sed -i "s/{{CHECKSUM}}/$CHECKSUM/g" bucket/gittop.json
+          # Update the manifest using jq for proper JSON manipulation
+          jq --arg ver "$VERSION" --arg hash "$CHECKSUM" '
+            .version = $ver |
+            .architecture."64bit".url = "https://github.com/AmarBego/GitTop/releases/download/v\($ver)/gittop-windows-x86_64.zip" |
+            .architecture."64bit".hash = $hash
+          ' bucket/gittop.json > bucket/gittop.json.tmp && mv bucket/gittop.json.tmp bucket/gittop.json
           
           echo "Updated bucket/gittop.json:"
           cat bucket/gittop.json

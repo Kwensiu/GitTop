@@ -1,6 +1,6 @@
 # Maintainer: AmarBego <begovicamar@proton.me>
 pkgname=gittop-bin
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="A lightweight GitHub notifications client. Why spin up a browser just to check your GitHub notifications?"
 arch=('x86_64')

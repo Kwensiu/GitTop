@@ -46,7 +46,17 @@ jobs:
         with:
           ref: ${{ steps.release.outputs.tag }}
 
-      # This action automatically updates checksums and pkgver in PKGBUILD
+      # Update pkgver in PKGBUILD to match the release tag
+      - name: Update PKGBUILD version
+        if: steps.release.outputs.is_prerelease != 'true'
+        run: |
+          VERSION="${{ steps.release.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ./packaging/aur/stable-bin/PKGBUILD
+          echo "Updated PKGBUILD to version: $VERSION"
+          grep "^pkgver=" ./packaging/aur/stable-bin/PKGBUILD
+
+      # This action automatically updates checksums in PKGBUILD
       - name: Publish gittop-bin
         if: steps.release.outputs.is_prerelease != 'true'
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
