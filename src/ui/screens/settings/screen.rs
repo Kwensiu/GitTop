@@ -349,36 +349,54 @@ impl SettingsScreen {
     }
 
     fn update_proxy_credentials(&mut self) {
-        // Load old URL before updating to check if credentials changed
         let old_url = self.settings.proxy.url.clone();
+        let new_url = self.proxy_url.clone();
 
         // Update proxy URL
-        self.settings.proxy.url = self.proxy_url.clone();
+        self.settings.proxy.url = new_url.clone();
 
         // Update has_credentials flag
         self.settings.proxy.has_credentials =
             !self.proxy_username.is_empty() || !self.proxy_password.is_empty();
 
-        // Check if credentials actually changed by loading current ones from keyring
-        let credentials_changed = if let Ok(Some((saved_username, saved_password))) =
-            proxy_keyring::load_proxy_credentials(&old_url)
-        {
-            saved_username != self.proxy_username || saved_password != self.proxy_password
-        } else {
-            // No saved credentials, but we're trying to save new ones
-            !self.proxy_username.is_empty() || !self.proxy_password.is_empty()
-        };
+        // Case 1: URL changed - handle both old and new URLs
+        if old_url != new_url {
+            // Delete credentials for old URL to prevent orphaned data
+            if !old_url.is_empty() {
+                let _ = proxy_keyring::delete_proxy_credentials(&old_url);
+            }
 
-        // Save or delete credentials from keyring based on whether they're empty
-        if self.proxy_username.is_empty() && self.proxy_password.is_empty() {
-            // Delete credentials if both are empty
-            let _ = proxy_keyring::delete_proxy_credentials(&old_url);
-        } else if credentials_changed {
-            // Only save if credentials actually changed
-            let username = self.proxy_username.as_str();
-            let password = self.proxy_password.as_str();
-            let _ =
-                proxy_keyring::save_proxy_credentials(&self.settings.proxy.url, username, password);
+            // Save credentials for new URL if provided
+            if !self.proxy_username.is_empty() && !self.proxy_password.is_empty() {
+                let username = self.proxy_username.as_str();
+                let password = self.proxy_password.as_str();
+                let _ =
+                    proxy_keyring::save_proxy_credentials(&new_url, username, password);
+            }
+        }
+        // Case 2: URL unchanged - only handle credential changes
+        else {
+            if self.proxy_username.is_empty() && self.proxy_password.is_empty() {
+                // User cleared credentials - delete them
+                let _ = proxy_keyring::delete_proxy_credentials(&old_url);
+            } else {
+                // Check if credentials actually changed
+                let should_save = if let Ok(Some((saved_username, saved_password))) =
+                    proxy_keyring::load_proxy_credentials(&old_url)
+                {
+                    saved_username != self.proxy_username || saved_password != self.proxy_password
+                } else {
+                    // No existing credentials, so save the new ones
+                    true
+                };
+
+                if should_save {
+                    let username = self.proxy_username.as_str();
+                    let password = self.proxy_password.as_str();
+                    let _ =
+                        proxy_keyring::save_proxy_credentials(&new_url, username, password);
+                }
+            }
         }
 
         // Persist settings
