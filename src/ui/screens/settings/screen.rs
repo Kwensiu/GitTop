@@ -16,13 +16,17 @@ pub struct SettingsScreen {
     pub settings: AppSettings,
     pub selected_tab: SettingsTab,
     pub accounts_state: accounts::AccountsTabState,
-    // Temporary state for proxy credentials (not persisted to settings.json)
+    // Temporary state for proxy settings
+    pub proxy_url: String,
     pub proxy_username: String,
     pub proxy_password: String,
 }
 
 impl SettingsScreen {
     pub fn new(settings: AppSettings) -> Self {
+        // Load proxy URL from settings
+        let proxy_url = settings.proxy.url.clone();
+
         // Load proxy credentials from keyring if they exist
         let (proxy_username, proxy_password) = if settings.proxy.has_credentials
             && let Ok(Some((user, pass))) =
@@ -37,6 +41,7 @@ impl SettingsScreen {
             settings,
             selected_tab: SettingsTab::default(),
             accounts_state: accounts::AccountsTabState::default(),
+            proxy_url,
             proxy_username,
             proxy_password,
         }
@@ -157,17 +162,18 @@ impl SettingsScreen {
                 Task::none()
             }
             SettingsMessage::ProxyUrlChanged(url) => {
-                self.settings.proxy.url = url;
-                self.persist_settings();
+                self.proxy_url = url;
                 Task::none()
             }
             SettingsMessage::ProxyUsernameChanged(username) => {
                 self.proxy_username = username;
-                self.update_proxy_credentials();
                 Task::none()
             }
             SettingsMessage::ProxyPasswordChanged(password) => {
                 self.proxy_password = password;
+                Task::none()
+            }
+            SettingsMessage::SaveProxySettings => {
                 self.update_proxy_credentials();
                 Task::none()
             }
@@ -332,7 +338,20 @@ impl SettingsScreen {
         crate::platform::trim_memory();
     }
 
+    /// Check if proxy settings have unsaved changes
+    pub fn has_unsaved_proxy_changes(&self) -> bool {
+        let url_changed = self.proxy_url != self.settings.proxy.url;
+        let old_has_creds = self.settings.proxy.has_credentials;
+        let new_has_creds = !self.proxy_username.is_empty() || !self.proxy_password.is_empty();
+        let creds_changed = old_has_creds != new_has_creds;
+
+        url_changed || creds_changed
+    }
+
     fn update_proxy_credentials(&mut self) {
+        // Update proxy URL
+        self.settings.proxy.url = self.proxy_url.clone();
+
         // Update has_credentials flag
         self.settings.proxy.has_credentials =
             !self.proxy_username.is_empty() || !self.proxy_password.is_empty();

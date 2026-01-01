@@ -32,6 +32,7 @@ pub enum LoginMessage {
     ProxyUrlChanged(String),
     ProxyUsernameChanged(String),
     ProxyPasswordChanged(String),
+    SubmitProxySettings,
 }
 
 impl LoginScreen {
@@ -91,11 +92,8 @@ impl LoginScreen {
                     return Task::none();
                 }
 
-                // Build proxy settings from current state
+                // Build proxy settings from current state (read only, no saving)
                 let proxy_settings = self.build_proxy_settings();
-
-                // Save proxy settings to disk and credentials to keyring
-                self.save_proxy_settings();
 
                 self.is_loading = true;
                 self.error_message = None;
@@ -159,6 +157,13 @@ impl LoginScreen {
             }
             LoginMessage::ProxyPasswordChanged(password) => {
                 self.proxy_password = password;
+                Task::none()
+            }
+            LoginMessage::SubmitProxySettings => {
+                // Save proxy settings to disk and credentials to keyring
+                self.save_proxy_settings();
+                // Go back to login screen
+                self.showing_proxy_settings = false;
                 Task::none()
             }
         }
@@ -355,13 +360,13 @@ impl LoginScreen {
         .width(Length::Fixed(320.0));
 
         let back_button = button(
-            text("Back to Login")
+            text("Save and Back")
                 .size(14)
                 .width(Fill)
                 .align_x(Alignment::Center),
         )
         .style(theme::primary_button)
-        .on_press(LoginMessage::ToggleProxySettings)
+        .on_press(LoginMessage::SubmitProxySettings)
         .width(Fill)
         .padding(12);
 

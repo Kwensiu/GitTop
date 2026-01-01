@@ -1,7 +1,7 @@
 //! Network proxy settings tab.
 
-use iced::widget::{Space, column, row, text, text_input, toggler};
-use iced::{Alignment, Element, Fill};
+use iced::widget::{Space, button, column, container, row, text, text_input, toggler};
+use iced::{Alignment, Element, Fill, Length};
 
 use crate::settings::AppSettings;
 use crate::ui::{icons, theme};
@@ -22,9 +22,7 @@ pub fn view(screen: &SettingsScreen) -> Element<'_, SettingsMessage> {
         Space::new().height(16),
         view_proxy_enabled(&screen.settings),
         Space::new().height(8),
-        view_proxy_url(&screen.settings),
-        Space::new().height(8),
-        view_proxy_auth(screen),
+        view_proxy_configuration(screen),
     ]
     .spacing(4)
     .padding(24)
@@ -58,34 +56,38 @@ fn view_proxy_enabled(settings: &AppSettings) -> Element<'_, SettingsMessage> {
     )
 }
 
-/// Proxy URL input card
-fn view_proxy_url(settings: &AppSettings) -> Element<'_, SettingsMessage> {
-    let p = theme::palette();
-
-    setting_card(column![
-        row![
-            text("Proxy URL").size(14).color(p.text_primary),
-            Space::new().width(Fill),
-        ]
-        .align_y(Alignment::Center),
-        Space::new().height(12),
-        text_input("http://proxy.company.com:8080", &settings.proxy.url)
-            .on_input(SettingsMessage::ProxyUrlChanged)
-            .padding([8, 12])
-            .size(13)
-            .width(Fill)
-            .style(theme::text_input_style),
-    ])
-}
-
-/// Proxy authentication card (username and password)
-fn view_proxy_auth(screen: &SettingsScreen) -> Element<'_, SettingsMessage> {
+/// Proxy configuration card (URL and authentication combined)
+fn view_proxy_configuration(screen: &SettingsScreen) -> Element<'_, SettingsMessage> {
     let p = theme::palette();
 
     let has_auth = screen.settings.proxy.has_credentials;
+    let has_unsaved = screen.has_unsaved_proxy_changes();
 
     setting_card(
         column![
+            // Proxy URL section
+            row![
+                text("Proxy URL").size(14).color(p.text_primary),
+                Space::new().width(Fill),
+            ]
+            .align_y(Alignment::Center),
+            Space::new().height(12),
+            text_input("http://proxy.company.com:8080", &screen.proxy_url)
+                .on_input(SettingsMessage::ProxyUrlChanged)
+                .padding([8, 12])
+                .size(13)
+                .width(Fill)
+                .style(theme::text_input_style),
+            Space::new().height(12),
+            // Separator
+            container(Space::new().height(1))
+                .width(Fill)
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(theme::palette().border_subtle,)),
+                    ..Default::default()
+                }),
+            Space::new().height(10),
+            // Authentication section
             row![
                 column![
                     text("Authentication").size(14).color(p.text_primary),
@@ -122,6 +124,21 @@ fn view_proxy_auth(screen: &SettingsScreen) -> Element<'_, SettingsMessage> {
                     .size(13)
                     .width(Fill)
                     .style(theme::text_input_style),
+            ]
+            .align_y(Alignment::Center),
+            Space::new().height(10),
+            // Save button
+            row![
+                Space::new().width(Fill),
+                button(text("Save").size(13).width(Fill).align_x(Alignment::Center))
+                    .style(if has_unsaved {
+                        theme::primary_button
+                    } else {
+                        theme::ghost_button
+                    })
+                    .on_press(SettingsMessage::SaveProxySettings)
+                    .width(Length::Fixed(60.0))
+                    .padding(6),
             ]
             .align_y(Alignment::Center),
         ]

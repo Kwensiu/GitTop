@@ -29,4 +29,5 @@ pub enum SettingsMessage {
     ProxyUrlChanged(String),
     ProxyUsernameChanged(String),
     ProxyPasswordChanged(String),
+    SaveProxySettings,
 }
