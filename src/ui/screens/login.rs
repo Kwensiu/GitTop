@@ -11,7 +11,7 @@ use crate::ui::theme;
 pub struct LoginScreen {
     token_input: String,
     is_loading: bool,
-    error_message: Option<String>,
+    pub error_message: Option<String>,
     showing_proxy_settings: bool,
     proxy_enabled: bool,
     proxy_url: String,

@@ -108,11 +108,11 @@ impl GitHubClient {
             let mut proxy_builder = reqwest::Proxy::all(&proxy_settings.url)
                 .map_err(|e| GitHubError::Request(format!("Invalid proxy URL: {}", e)))?;
 
-            if let Some(user) = username {
-                if !user.is_empty() {
-                    let pass = password.as_deref().unwrap_or("");
-                    proxy_builder = proxy_builder.basic_auth(&user, pass);
-                }
+            if let Some(user) = username
+                && !user.is_empty()
+            {
+                let pass = password.as_deref().unwrap_or("");
+                proxy_builder = proxy_builder.basic_auth(&user, pass);
             }
 
             client_builder = client_builder.proxy(proxy_builder);

@@ -20,6 +20,9 @@ pub enum SessionError {
 
     #[error("Account not found: {0}")]
     AccountNotFound(String),
+
+    #[error("Network error: {0}")]
+    NetworkError(String),
 }
 
 /// An authenticated session for a single account.
@@ -57,11 +60,30 @@ impl SessionManager {
             match GitHubClient::validate_token_with_proxy(&token, proxy_settings).await {
                 Ok((client, user)) => (client, user),
                 Err(GitHubError::Unauthorized) => {
-                    // Token expired, clean up
+                    // Token expired/revoked from GitHub (401), clean up
                     let _ = keyring::delete_token(username);
                     return Err(SessionError::AccountNotFound(username.to_string()));
                 }
-                Err(e) => return Err(SessionError::GitHub(e)),
+                Err(GitHubError::Request(msg)) => {
+                    // Connection/network error - keep account, report network issue
+                    return Err(SessionError::NetworkError(msg));
+                }
+                Err(GitHubError::Api { status, message }) => {
+                    // API error that's NOT from GitHub auth:
+                    // - 407 = Proxy authentication required
+                    // - Other statuses could be proxy/network issues
+                    // Don't delete token for these
+                    return Err(SessionError::NetworkError(format!(
+                        "API error (status {}): {}",
+                        status, message
+                    )));
+                }
+                Err(GitHubError::RateLimited) => {
+                    // Rate limited - definitely keep account, just can't fetch now
+                    return Err(SessionError::NetworkError(
+                        "GitHub rate limit exceeded".to_string(),
+                    ));
+                }
             };
 
         // Create session
